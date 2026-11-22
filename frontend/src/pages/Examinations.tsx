@@ -1392,8 +1392,8 @@ export const Examinations: React.FC = () => {
               </div>
 
               {/* Subject Test Papers Accordion */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-4 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-100 pb-3">
                   <h3 className="font-bold text-slate-900 text-sm">Question Paper & Marks Configuration</h3>
                   <span className="text-xs text-slate-400">Total Marks Based • No Practicals</span>
                 </div>
@@ -1402,39 +1402,45 @@ export const Examinations: React.FC = () => {
                   {selectedExamDetail.subjects.map((paper) => (
                     <div
                       key={paper.id}
-                      className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                      className="p-3.5 sm:p-4 bg-slate-50/80 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4"
                     >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-bold text-slate-900 text-sm">{paper.subject_name}</span>
-                          <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200">
+                      <div className="space-y-2 min-w-0">
+                        {/* Title & Hierarchy Badges */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-slate-900 text-sm sm:text-base mr-1">
+                            {paper.subject_name}
+                          </span>
+                          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 whitespace-nowrap">
                             {paper.subject_code}
                           </span>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-purple-100 text-purple-800 whitespace-nowrap">
                             {paper.class_name}
                           </span>
                           {paper.course_name && (
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                            <span
+                              className="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 whitespace-nowrap max-w-[260px] truncate"
+                              title={paper.course_name}
+                            >
                               {paper.course_name}
                             </span>
                           )}
                         </div>
 
-                        <div className="flex items-center space-x-3 text-xs text-slate-600 font-medium">
-                          <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-bold border border-purple-100">
+                        {/* Marks & Timing Metadata Badges */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600 font-medium pt-0.5">
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-bold border border-purple-100 whitespace-nowrap">
                             Max: {paper.max_marks} Marks
                           </span>
-                          <span>•</span>
-                          <span>Passing: {paper.passing_marks} Marks</span>
-                          <span>•</span>
-                          <span>Duration: {paper.duration_minutes} Mins</span>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium whitespace-nowrap">
+                            Passing: {paper.passing_marks} Marks
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium whitespace-nowrap">
+                            Duration: {paper.duration_minutes} Mins
+                          </span>
                           {paper.has_negative_marking && (
-                            <>
-                              <span>•</span>
-                              <span className="text-rose-600 font-semibold">
-                                Negative: -{paper.negative_mark_weight}
-                              </span>
-                            </>
+                            <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 font-medium border border-rose-100 whitespace-nowrap">
+                              Negative: -{paper.negative_mark_weight}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1442,7 +1448,7 @@ export const Examinations: React.FC = () => {
                       {canManage && (
                         <button
                           onClick={() => openMarksEntry(paper)}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center space-x-1.5 self-start md:self-auto"
+                          className="w-full md:w-auto px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center justify-center space-x-1.5 shrink-0"
                         >
                           <FileCheck className="w-3.5 h-3.5" />
                           <span>
