@@ -1,7 +1,8 @@
+import json
 import urllib.parse
-from typing import List, Optional
+from typing import List, Optional, Union, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 
 
 class Settings(BaseSettings):
@@ -109,12 +110,47 @@ class Settings(BaseSettings):
     BREVO_SENDER_EMAIL: str = "admissions@yashodeepcoachingclasses.in"
 
     # CORS
-    BACKEND_CORS_ORIGINS: List[str] = [
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        "https://yashodeep-crm.vercel.app"
     ]
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return [
+                    "http://localhost:5173",
+                    "http://localhost:3000",
+                    "http://127.0.0.1:5173",
+                    "http://127.0.0.1:3000",
+                    "https://yashodeep-crm.vercel.app"
+                ]
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    # Handle single quotes: ['https://...']
+                    v = v.strip("[]").replace("'", '"')
+                    try:
+                        return json.loads(f"[{v}]")
+                    except Exception:
+                        pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, (list, tuple)):
+            return list(v)
+        return [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+            "https://yashodeep-crm.vercel.app"
+        ]
 
 
 settings = Settings()
