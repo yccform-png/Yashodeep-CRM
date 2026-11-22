@@ -748,40 +748,44 @@ export const FeesManagement: React.FC = () => {
           </div>
 
           {/* Academic Class & Batch Filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center space-x-1.5">
-              <label className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Class:</label>
-              <select
-                value={selectedClassId}
-                onChange={(e) => {
-                  setSelectedClassId(e.target.value);
-                  setSelectedBatchId('ALL');
-                }}
-                className="text-xs py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-700"
-              >
-                <option value="ALL">All Classes / Standards</option>
-                {classes.map((cls) => (
-                  <option key={cls.id} value={cls.id}>
-                    {cls.name} ({cls.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+              {/* Class Filter */}
+              <div className="flex items-center space-x-1.5 min-w-0">
+                <GraduationCap className="w-4 h-4 text-purple-600 shrink-0" />
+                <select
+                  value={selectedClassId}
+                  onChange={(e) => {
+                    setSelectedClassId(e.target.value);
+                    setSelectedBatchId('ALL');
+                  }}
+                  className="w-full sm:w-auto sm:max-w-[190px] text-xs font-semibold py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 truncate min-w-0"
+                >
+                  <option value="ALL">All Standards / Classes</option>
+                  {classes.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name} ({cls.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center space-x-1.5">
-              <label className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">Batch:</label>
-              <select
-                value={selectedBatchId}
-                onChange={(e) => setSelectedBatchId(e.target.value)}
-                className="text-xs py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-slate-700"
-              >
-                <option value="ALL">All Batches</option>
-                {availableBatches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} (Div {b.division})
-                  </option>
-                ))}
-              </select>
+              {/* Batch Filter */}
+              <div className="flex items-center space-x-1.5 min-w-0">
+                <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
+                <select
+                  value={selectedBatchId}
+                  onChange={(e) => setSelectedBatchId(e.target.value)}
+                  className="w-full sm:w-auto sm:max-w-[190px] text-xs font-semibold py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 truncate min-w-0"
+                >
+                  <option value="ALL">All Batches</option>
+                  {availableBatches.map((b) => (
+                    <option key={b.id} value={b.id} title={`${b.name} (Div ${b.division})`}>
+                      {b.name} (Div {b.division})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {(selectedClassId !== 'ALL' || selectedBatchId !== 'ALL' || statusFilter !== 'ALL' || searchQuery) && (
@@ -793,9 +797,10 @@ export const FeesManagement: React.FC = () => {
                   setStatusFilter('ALL');
                   setSearchQuery('');
                 }}
-                className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 transition"
+                className="self-end sm:self-center inline-flex items-center space-x-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-200 transition shrink-0"
               >
-                Clear
+                <X className="w-3 h-3" />
+                <span>Clear</span>
               </button>
             )}
           </div>
