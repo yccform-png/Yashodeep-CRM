@@ -1138,55 +1138,140 @@ export const FeesManagement: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
                     <span>Due: {inv.due_date}</span>
                     {inv.installments && inv.installments.length > 0 && (
-                      <span className="font-semibold text-slate-700">{inv.installments.length} Installments</span>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedInvoiceId(expandedInvoiceId === inv.id ? null : inv.id)}
+                        className="font-semibold text-slate-700 hover:text-emerald-700 inline-flex items-center gap-1 cursor-pointer transition"
+                      >
+                        <span>{inv.installments.length} Installments</span>
+                        {expandedInvoiceId === inv.id ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                      </button>
                     )}
                   </div>
 
-                  {/* Action buttons */}
-                  <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedInvoiceForDetail(inv.id)}
-                      className="h-8 px-3 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span>Print Voucher</span>
-                    </button>
+                  {/* Expanded Installments on Mobile */}
+                  {expandedInvoiceId === inv.id && inv.installments && inv.installments.length > 0 && (
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs border-b border-slate-200/80 pb-2">
+                        <span className="font-bold text-slate-800 flex items-center space-x-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Installments Breakdown</span>
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          {inv.installments.filter((i) => i.status === 'PAID').length} of {inv.installments.length} Paid
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {[...(inv.installments || [])].sort((a, b) => a.installment_number - b.installment_number).map((inst) => (
+                          <div
+                            key={inst.id}
+                            className={`p-2.5 rounded-lg border text-xs space-y-1.5 ${
+                              inst.status === 'PAID'
+                                ? 'bg-emerald-50/40 border-emerald-200'
+                                : inst.status === 'OVERDUE'
+                                ? 'bg-rose-50/40 border-rose-200'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-900">Inst #{inst.installment_number}</span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  inst.status === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : inst.status === 'OVERDUE'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {inst.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-500">Amount: <strong className="text-slate-800 font-semibold">₹{inst.amount.toLocaleString('en-IN')}</strong></span>
+                              <span className="text-slate-500">Due: <strong className={inst.status === 'OVERDUE' ? 'text-rose-600 font-semibold' : 'text-slate-700 font-semibold'}>{inst.due_date}</strong></span>
+                            </div>
+                            {inst.status !== 'PAID' && (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                {canReschedule && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openRescheduleModal(inv, inst)}
+                                    className="flex-1 py-1 px-2 text-[10px] font-semibold bg-white border border-slate-200 hover:border-emerald-500 text-slate-600 rounded-md shadow-2xs flex items-center justify-center space-x-1"
+                                  >
+                                    <Calendar className="w-3 h-3" />
+                                    <span>Reschedule</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={remindingId === inst.id}
+                                  onClick={() => handleSendReminder(inv.id, inst.id, inst.installment_number)}
+                                  className="flex-1 py-1 px-2 text-[10px] font-semibold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-md shadow-2xs flex items-center justify-center space-x-1 disabled:opacity-50"
+                                >
+                                  <Bell className="w-3 h-3 text-amber-600" />
+                                  <span>{remindingId === inst.id ? 'Sending...' : 'Remind'}</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                    <div className="inline-flex items-center gap-2">
+                  {/* Action buttons */}
+                  <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInvoiceForDetail(inv.id)}
+                        className="flex-1 min-w-[90px] h-8 px-2.5 border border-slate-200 hover:bg-slate-100 active:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span>Print</span>
+                      </button>
+
                       {inv.balance_amount > 0 && (
                         <button
                           type="button"
                           disabled={remindingId === inv.id}
                           onClick={() => handleSendReminder(inv.id)}
-                          className="h-8 px-2.5 border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          className="flex-1 min-w-[90px] h-8 px-2.5 border border-amber-200 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
                           title="Send Fee Due Reminder via WhatsApp & Email"
                         >
                           <Bell className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           <span>{remindingId === inv.id ? 'Sending...' : 'Remind'}</span>
                         </button>
                       )}
+
                       {canRestructure && inv.balance_amount > 0 && (
                         <button
                           type="button"
                           onClick={() => openRestructureModal(inv)}
-                          className="h-8 px-2.5 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5"
+                          className="flex-1 min-w-[95px] h-8 px-2.5 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 rounded-xl text-xs font-semibold shadow-2xs transition inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                           title="Restructure Payment Plan"
                         >
                           <Sliders className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                           <span>Restructure</span>
                         </button>
                       )}
-                      {inv.balance_amount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => openPaymentForInvoice(inv)}
-                          className="h-8 px-3 border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition inline-flex items-center justify-center"
-                        >
-                          Collect Fee
-                        </button>
-                      )}
                     </div>
+
+                    {inv.balance_amount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openPaymentForInvoice(inv)}
+                        className="w-full h-9 border border-transparent bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition inline-flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4 shrink-0" />
+                        <span>Collect Fee (₹{Number(inv.balance_amount).toLocaleString('en-IN')})</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
