@@ -807,17 +807,17 @@ export const FeesManagement: React.FC = () => {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Desktop Table View (>= md) */}
         <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+          <table className="w-full min-w-[980px] text-left border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-6">Invoice #</th>
-                <th className="py-3.5 px-6">Student</th>
-                <th className="py-3.5 px-6">Issue / Due Date</th>
-                <th className="py-3.5 px-6 text-right">Total Amount</th>
-                <th className="py-3.5 px-6 text-right">Paid</th>
-                <th className="py-3.5 px-6 text-right">Balance Due</th>
-                <th className="py-3.5 px-6 text-center">Status</th>
-                <th className="py-3.5 px-6 text-right">Actions</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                <th className="py-3.5 px-6 whitespace-nowrap">Invoice #</th>
+                <th className="py-3.5 px-6 min-w-[200px]">Student</th>
+                <th className="py-3.5 px-6 whitespace-nowrap">Issue / Due Date</th>
+                <th className="py-3.5 px-6 text-right whitespace-nowrap">Total Amount</th>
+                <th className="py-3.5 px-6 text-right whitespace-nowrap">Paid</th>
+                <th className="py-3.5 px-6 text-right whitespace-nowrap">Balance Due</th>
+                <th className="py-3.5 px-6 text-center whitespace-nowrap min-w-[130px]">Status</th>
+                <th className="py-3.5 px-6 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -833,15 +833,15 @@ export const FeesManagement: React.FC = () => {
                   return (
                     <React.Fragment key={inv.id}>
                       <tr className="hover:bg-slate-50/70 transition-all">
-                      <td className="py-4 px-6 font-mono font-bold text-slate-900">
+                      <td className="py-4 px-6 font-mono font-bold text-slate-900 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => setSelectedInvoiceForDetail(inv.id)}
-                          className="hover:text-emerald-700 hover:underline inline-flex items-center space-x-1.5 font-mono font-bold text-slate-900 group"
+                          className="hover:text-emerald-700 hover:underline inline-flex items-center space-x-1.5 font-mono font-bold text-slate-900 group whitespace-nowrap"
                           title="Click to View &amp; Print Dual-Copy Invoice"
                         >
                           <span>{inv.invoice_number}</span>
-                          <Printer className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition" />
+                          <Printer className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition shrink-0" />
                         </button>
                       </td>
                       <td className="py-4 px-6">
@@ -872,24 +872,24 @@ export const FeesManagement: React.FC = () => {
                           <span className="text-slate-400">Loading student...</span>
                         )}
                       </td>
-                      <td className="py-4 px-6 text-xs text-slate-600">
+                      <td className="py-4 px-6 text-xs text-slate-600 whitespace-nowrap">
                         <div>Issue: {inv.issue_date}</div>
                         <div className="text-slate-400">Due: {inv.due_date}</div>
                       </td>
-                      <td className="py-4 px-6 text-right font-bold text-slate-900">
+                      <td className="py-4 px-6 text-right font-bold text-slate-900 whitespace-nowrap">
                         ₹{Number(inv.total_amount).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-4 px-6 text-right font-medium text-emerald-600">
+                      <td className="py-4 px-6 text-right font-medium text-emerald-600 whitespace-nowrap">
                         ₹{Number(inv.paid_amount).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-4 px-6 text-right font-bold text-amber-600">
+                      <td className="py-4 px-6 text-right font-bold text-amber-600 whitespace-nowrap">
                         ₹{Number(inv.balance_amount).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-4 px-6 text-center">
+                      <td className="py-4 px-6 text-center whitespace-nowrap min-w-[130px]">
                         <span
-                          className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                          className={`inline-flex items-center justify-center text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap border shadow-2xs tracking-wide ${
                             inv.status === 'PAID'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : inv.status === 'PARTIALLY_PAID'
                               ? 'bg-blue-50 text-blue-700 border border-blue-200'
                               : inv.status === 'OVERDUE'
@@ -1105,7 +1105,7 @@ export const FeesManagement: React.FC = () => {
                     </div>
 
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap inline-flex items-center border shadow-2xs ${
                         inv.status === 'PAID'
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           : inv.status === 'PARTIALLY_PAID'
@@ -1345,9 +1345,9 @@ export const FeesManagement: React.FC = () => {
                                     <td className="py-3 px-4 text-right font-bold text-amber-600">
                                       ₹{Number(inv.balance_amount).toLocaleString('en-IN')}
                                     </td>
-                                    <td className="py-3 px-4 text-center">
+                                    <td className="py-3 px-4 text-center whitespace-nowrap min-w-[120px]">
                                       <span
-                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        className={`inline-flex items-center justify-center text-[10px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap border shadow-2xs ${
                                           inv.status === 'PAID'
                                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                             : inv.status === 'PARTIALLY_PAID'
