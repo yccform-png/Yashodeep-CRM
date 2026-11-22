@@ -25,6 +25,13 @@ from app.models.examination import Examination, ExamSubject, ExamMarks, ExamResu
 from app.models.institute import Institute
 
 async def clean_database():
+    from app.core.config import settings
+    # Strict Production Protection: Never allow bulk database cleanup on live/cloud databases!
+    db_url_str = str(settings.DATABASE_URL or "")
+    if "neon.tech" in db_url_str or "render" in db_url_str or "aws" in db_url_str or settings.ENVIRONMENT != "test":
+        print(f">>> [SAFETY LOCK] Bulk database cleanup is DISABLED on production/cloud database ({settings.ENVIRONMENT}). Preserving all existing records.")
+        return
+
     h_id = uuid.UUID('561a7fe7-6a2e-4a9e-aace-2a5abb529a81')
     h_inv_ids = [uuid.UUID('8197c4fb-a31f-4db8-866b-2776062b9eba'), uuid.UUID('9be9d391-2985-47b1-b4da-184601d7df34')]
     h_pay_ids = [uuid.UUID('01261e32-15ae-4dd1-9157-48b2557e0960')]

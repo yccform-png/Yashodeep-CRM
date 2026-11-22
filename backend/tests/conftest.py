@@ -63,11 +63,12 @@ def auth_headers() -> dict:
 def pytest_sessionfinish(session, exitstatus):
     """
     Automatic teardown hook:
-    Ensures that any test records created during test runs are automatically
-    purged on test environments, while strictly guarding live production databases.
+    Strictly guards live production databases.
+    Only permitted in an isolated test environment.
     """
-    if "neondb" in str(settings.DATABASE_URL or "") and not os.getenv("ALLOW_TEST_PURGE"):
-        print("\n>>> Live Neon Production Database detected: Skipping automatic test purge to preserve real production records.")
+    db_url = str(settings.DATABASE_URL or "")
+    if "neon.tech" in db_url or "aws" in db_url or settings.ENVIRONMENT != "test":
+        print("\n>>> Protected Database detected: Skipping automatic test purge to preserve all existing records.")
         return
 
     import asyncio
