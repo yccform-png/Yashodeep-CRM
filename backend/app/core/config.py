@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     BREVO_EMAIL_ENABLED: bool = False
     BREVO_API_KEY: Optional[str] = None
     BREVO_SENDER_NAME: str = "Yashodeep Coaching Classes"
-    BREVO_SENDER_EMAIL: str = "admissions@yashodeepcoachingclasses.in"
+    BREVO_SENDER_EMAIL: str = "info@yashodeepcoachingclasses.in"
 
     # CORS
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
