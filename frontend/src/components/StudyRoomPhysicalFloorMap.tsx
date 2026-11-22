@@ -279,7 +279,7 @@ export const StudyRoomPhysicalFloorMap: React.FC<StudyRoomPhysicalFloorMapProps>
     blockIndex: number
   ) => {
     return (
-      <div key={blockIndex} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/90 shadow-sm space-y-3">
+      <div key={blockIndex} className="bg-slate-50/80 rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 shadow-sm space-y-3">
         {/* Block Header */}
         <div className="flex items-center justify-between text-xs border-b border-slate-200 pb-2">
           <div className="flex items-center space-x-2">
@@ -292,36 +292,39 @@ export const StudyRoomPhysicalFloorMap: React.FC<StudyRoomPhysicalFloorMapProps>
         </div>
 
         {/* Bench Grid with Central Facing Partition */}
-        <div className="space-y-1.5 overflow-x-auto pb-1">
-          {/* Upper Row */}
-          <div>
-            <div className="text-[10px] font-semibold text-slate-500 mb-1 flex items-center justify-between">
-              <span>{block.upperRowName}</span>
-              <span className="text-[9px] text-slate-400">Facing ⬇️</span>
+        <div className="overflow-x-auto pb-1.5 pt-0.5">
+          <div className="min-w-max space-y-2">
+            {/* Upper Row */}
+            <div>
+              <div className="text-[10px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between sticky left-0 pr-3">
+                <span className="font-bold text-slate-700">{block.upperRowName}</span>
+                <span className="text-[9px] font-semibold text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">Facing ⬇️</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {block.upperSeats.map((seatNum) => renderDeskCell(seatNum))}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 w-max">
-              {block.upperSeats.map((seatNum) => renderDeskCell(seatNum))}
-            </div>
-          </div>
 
-          {/* Central Partition Divider with Power Cable Channel */}
-          <div className="relative py-2 flex items-center justify-center">
-            <div className="w-full border-t-2 border-dashed border-slate-300" />
-            <div className="absolute bg-white px-3 py-0.5 rounded-full border border-slate-300 text-[9px] font-bold tracking-wider text-slate-500 uppercase flex items-center space-x-1.5 shadow-xs">
-              <Zap className="w-2.5 h-2.5 text-amber-500" />
-              <span>Facing Divider • Central Power & Data Conduit</span>
-              <ArrowUpDown className="w-2.5 h-2.5 text-slate-400" />
+            {/* Central Partition Divider with Power Cable Channel */}
+            <div className="relative my-2.5 sm:my-3 py-1 flex items-center w-full">
+              <div className="w-full border-t-2 border-dashed border-slate-300" />
+              <div className="sticky left-4 bg-white/95 backdrop-blur-xs px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full border border-slate-300 text-[9px] sm:text-[10px] font-bold tracking-wider text-slate-600 uppercase flex items-center space-x-1.5 shadow-xs whitespace-nowrap z-10 shrink-0">
+                <Zap className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-500 shrink-0" />
+                <span className="hidden sm:inline">Facing Divider • Central Power &amp; Data Conduit</span>
+                <span className="sm:hidden">Facing Divider • Power &amp; LAN</span>
+                <ArrowUpDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 shrink-0" />
+              </div>
             </div>
-          </div>
 
-          {/* Lower Row */}
-          <div>
-            <div className="text-[10px] font-semibold text-slate-500 mb-1 flex items-center justify-between">
-              <span>{block.lowerRowName}</span>
-              <span className="text-[9px] text-slate-400">Facing ⬆️</span>
-            </div>
-            <div className="flex items-center gap-1.5 w-max">
-              {block.lowerSeats.map((seatNum) => renderDeskCell(seatNum))}
+            {/* Lower Row */}
+            <div>
+              <div className="text-[10px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between sticky left-0 pr-3">
+                <span className="font-bold text-slate-700">{block.lowerRowName}</span>
+                <span className="text-[9px] font-semibold text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">Facing ⬆️</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {block.lowerSeats.map((seatNum) => renderDeskCell(seatNum))}
+              </div>
             </div>
           </div>
         </div>
@@ -340,7 +343,7 @@ export const StudyRoomPhysicalFloorMap: React.FC<StudyRoomPhysicalFloorMapProps>
     blockIndex: number
   ) => {
     return (
-      <div key={blockIndex} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/90 shadow-sm space-y-3">
+      <div key={blockIndex} className="bg-slate-50/80 rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 shadow-sm space-y-3">
         {/* Block Header */}
         <div className="flex items-center justify-between text-xs border-b border-slate-200 pb-2">
           <div className="flex items-center space-x-2">
@@ -353,12 +356,14 @@ export const StudyRoomPhysicalFloorMap: React.FC<StudyRoomPhysicalFloorMapProps>
         </div>
 
         {/* Bench Grid */}
-        <div className="overflow-x-auto pb-1">
-          <div className="text-[10px] font-semibold text-slate-500 mb-1">
-            {block.rowName}
-          </div>
-          <div className="flex items-center gap-1.5 w-max">
-            {block.seats.map((seatNum) => renderDeskCell(seatNum))}
+        <div className="overflow-x-auto pb-1.5 pt-0.5">
+          <div className="min-w-max space-y-1.5">
+            <div className="text-[10px] font-semibold text-slate-500 mb-1 sticky left-0">
+              <span className="font-bold text-slate-700">{block.rowName}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {block.seats.map((seatNum) => renderDeskCell(seatNum))}
+            </div>
           </div>
         </div>
       </div>
