@@ -82,6 +82,27 @@ async def create_academic_year(
     return ay
 
 
+@router.post("/years/{year_id}/set-current", response_model=AcademicYearResponse)
+async def set_current_academic_year(
+    year_id: uuid.UUID,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    target = await db.get(AcademicYear, year_id)
+    if not target:
+        raise NotFoundException("Academic Year not found")
+
+    # Unmark all other years
+    all_years = await db.execute(select(AcademicYear))
+    for y in all_years.scalars().all():
+        y.is_current = (y.id == target.id)
+
+    await db.commit()
+    await db.refresh(target)
+    await cache_service.delete(CacheKeys.academic_years())
+    return target
+
+
 # --- Classes ---
 @router.get("/classes", response_model=List[ClassResponse])
 async def list_classes(db: AsyncSession = Depends(get_db)):

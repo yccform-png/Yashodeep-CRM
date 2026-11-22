@@ -42,6 +42,7 @@ import {
   ListFilter
 } from 'lucide-react';
 import apiClient from '../api/client';
+import { CohortPromotionWizard } from '../components/CohortPromotionWizard';
 
 interface ClassItem {
   id: string;
@@ -173,7 +174,7 @@ interface BatchItem {
 }
 
 export const AcademicConfig: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'COURSES' | 'BATCHES' | 'SUBJECTS' | 'CLASSES' | 'STREAMS'>('COURSES');
+  const [activeTab, setActiveTab] = useState<'COURSES' | 'BATCHES' | 'SUBJECTS' | 'CLASSES' | 'STREAMS' | 'ROLLOVER'>('COURSES');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [streams, setStreams] = useState<StreamItem[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
@@ -858,6 +859,7 @@ export const AcademicConfig: React.FC = () => {
         {[
           { key: 'COURSES', label: 'Master Courses', count: courses.length },
           { key: 'BATCHES', label: 'Teaching Batches', count: batches.length },
+          { key: 'ROLLOVER', label: 'Cohort Promotion & Rollover', count: 'New', isNew: true },
           { key: 'SUBJECTS', label: 'Subjects Catalog', count: subjects.length },
           { key: 'CLASSES', label: 'Classes (5th - 12th)', count: classes.length },
           { key: 'STREAMS', label: 'Academic Streams', count: streams.length },
@@ -1565,6 +1567,17 @@ export const AcademicConfig: React.FC = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Tab: COHORT PROMOTION & ROLLOVER */}
+      {activeTab === 'ROLLOVER' && (
+        <CohortPromotionWizard
+          academicYears={academicYears}
+          classes={classes}
+          courses={courses}
+          batches={batches}
+          onRefreshAcademics={fetchAllAcademics}
+        />
       )}
 
       {/* Add / Edit Subject Modal */}

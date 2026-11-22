@@ -141,3 +141,70 @@ class SkillEnrollmentResponse(BaseModel):
     billing_mode: str = "SEPARATE_INVOICE"  # "SEPARATE_INVOICE" or "MERGED"
     updated_installments_count: Optional[int] = None
     message: str
+
+
+class CohortReviewStudentItem(BaseModel):
+    student_id: uuid.UUID
+    enrollment_id: uuid.UUID
+    student_name: str
+    student_code: str
+    prn: Optional[str] = None
+    roll_number: Optional[int] = None
+    gender: str
+    enrollment_status: str
+    promotion_status: str
+    attendance_rate: float
+    total_invoiced: Decimal
+    total_paid: Decimal
+    balance_due: Decimal
+    has_hostel_bed: bool
+    hostel_bed_code: Optional[str] = None
+    has_study_desk: bool
+    study_desk_code: Optional[str] = None
+
+
+class CohortReviewResponse(BaseModel):
+    batch_id: uuid.UUID
+    batch_name: str
+    batch_code: str
+    division: str
+    class_id: uuid.UUID
+    class_name: str
+    academic_year_id: uuid.UUID
+    academic_year_name: str
+    total_enrolled: int
+    students: List[CohortReviewStudentItem]
+
+
+class StudentCohortActionItem(BaseModel):
+    student_id: uuid.UUID
+    enrollment_id: uuid.UUID
+    action: str = "PROMOTE"  # "PROMOTE", "GRADUATE", "WITHDRAW"
+    custom_concession: Decimal = Decimal("0.00")
+    override_batch_id: Optional[uuid.UUID] = None
+
+
+class BulkCohortPromotionRequest(BaseModel):
+    source_academic_year_id: uuid.UUID
+    source_batch_id: uuid.UUID
+    target_academic_year_id: uuid.UUID
+    target_class_id: Optional[uuid.UUID] = None
+    target_stream_id: Optional[uuid.UUID] = None
+    target_course_id: Optional[uuid.UUID] = None
+    target_course_version_id: Optional[uuid.UUID] = None
+    target_fee_structure_id: Optional[uuid.UUID] = None
+    target_tuition_fee: Optional[Decimal] = None
+    number_of_installments: int = 1
+    custom_installments: Optional[List[CustomInstallmentInput]] = None
+    prior_dues_action: str = "CARRY_FORWARD"  # "CARRY_FORWARD" or "BLOCK_IF_DUE"
+    notify_parents: bool = True
+    students: List[StudentCohortActionItem]
+
+
+class BulkCohortPromotionResponse(BaseModel):
+    promoted_count: int
+    graduated_count: int
+    withdrawn_count: int
+    total_invoiced_amount: Decimal
+    new_invoices: List[dict]
+    messages: List[str]

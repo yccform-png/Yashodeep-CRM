@@ -365,3 +365,129 @@ def format_admission_welcome_whatsapp(
             }
         ]
     }
+
+
+# -----------------------------------------------------------------------------
+# 6. PROMOTION & NEXT-YEAR ENROLLMENT CONFIRMATION
+# -----------------------------------------------------------------------------
+def format_promotion_confirmation_whatsapp(
+    parent_name: str,
+    student_name: str,
+    promoted_class_name: str,
+    academic_year_name: str,
+    invoice_number: str,
+    total_amount: str
+) -> Dict[str, Any]:
+    """Meta WhatsApp Template: ycc_promotion_confirmation"""
+    return {
+        "template_name": "ycc_promotion_confirmation",
+        "components": [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": parent_name},
+                    {"type": "text", "text": student_name},
+                    {"type": "text", "text": promoted_class_name},
+                    {"type": "text", "text": academic_year_name},
+                    {"type": "text", "text": invoice_number},
+                    {"type": "text", "text": total_amount}
+                ]
+            }
+        ]
+    }
+
+
+def format_promotion_confirmation_email(
+    student_name: str,
+    prn: str,
+    old_class_name: str,
+    new_class_name: str,
+    new_batch_name: str,
+    academic_year_name: str,
+    invoice_number: str,
+    total_amount: str,
+    installments: List[Dict[str, Any]],
+    portal_url: Optional[str] = None
+) -> Dict[str, Any]:
+    subject = f"Promotion Confirmed: {student_name} Promoted to {new_class_name} ({academic_year_name}) - Yashodeep Career Coaching"
+
+    installments_html = "".join([
+        f"""
+        <tr>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">#{inst.get('number', i + 1)}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #475569;">{inst.get('due_date', '—')}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700; color: #0f172a;">₹{float(inst.get('amount', 0)):,.2f}</td>
+            <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; text-align: center;">
+                <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; background-color: #fef3c7; color: #92400e;">SCHEDULED</span>
+            </td>
+        </tr>
+        """
+        for i, inst in enumerate(installments)
+    ])
+
+    body = f"""
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
+        <h3 style="margin: 0 0 8px 0; color: #166534; font-size: 16px; font-weight: 700;">🎉 Academic Promotion Confirmed!</h3>
+        <p style="margin: 0; color: #15803d; font-size: 14px; line-height: 1.5;">
+            We are proud to confirm that <strong>{student_name}</strong> (PRN: <code>{prn}</code>) has successfully completed <strong>{old_class_name}</strong> and is officially promoted to <strong>{new_class_name}</strong> for the upcoming <strong>Academic Session {academic_year_name}</strong>.
+        </p>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; background-color: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; overflow: hidden;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; color: #64748b; font-size: 13px; width: 40%;">Student Name</td>
+            <td style="padding: 12px 16px; font-weight: 700; color: #0f172a; font-size: 13px;">{student_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fafafa;">
+            <td style="padding: 12px 16px; color: #64748b; font-size: 13px;">Permanent Reg. # (PRN)</td>
+            <td style="padding: 12px 16px; font-weight: 700; color: #0284c7; font-family: monospace; font-size: 13px;">{prn}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; color: #64748b; font-size: 13px;">Promoted Standard & Cohort</td>
+            <td style="padding: 12px 16px; font-weight: 700; color: #4338ca; font-size: 13px;">{new_class_name} — {new_batch_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fafafa;">
+            <td style="padding: 12px 16px; color: #64748b; font-size: 13px;">Academic Session</td>
+            <td style="padding: 12px 16px; font-weight: 600; color: #0f172a; font-size: 13px;">{academic_year_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; color: #64748b; font-size: 13px;">Tuition Invoice Number</td>
+            <td style="padding: 12px 16px; font-weight: 700; color: #0f172a; font-size: 13px;">{invoice_number}</td>
+        </tr>
+        <tr style="background-color: #f8fafc;">
+            <td style="padding: 14px 16px; font-weight: 700; color: #0f172a; font-size: 14px;">Total Billed Amount</td>
+            <td style="padding: 14px 16px; font-weight: 800; color: #16a34a; font-size: 16px;">₹{float(total_amount):,.2f}</td>
+        </tr>
+    </table>
+
+    <h4 style="margin: 0 0 12px 0; color: #1e293b; font-size: 14px; font-weight: 700;">Scheduled Installment Plan ({academic_year_name})</h4>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <thead>
+            <tr style="background-color: #f1f5f9; text-align: left; color: #475569; font-size: 12px; text-transform: uppercase;">
+                <th style="padding: 10px 14px;">Installment</th>
+                <th style="padding: 10px 14px;">Scheduled Due Date</th>
+                <th style="padding: 10px 14px; text-align: right;">Amount</th>
+                <th style="padding: 10px 14px; text-align: center;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {installments_html if installments_html else '<tr><td colspan="4" style="padding: 12px; text-align: center; color: #64748b;">Full payment upfront scheduled.</td></tr>'}
+        </tbody>
+    </table>
+
+    <p style="margin: 0 0 16px 0; color: #475569; font-size: 13px; line-height: 1.6;">
+        Classes for the new session will commence according to the academic calendar. Please ensure fees are remitted on or before their due dates for uninterrupted class access, study materials, and tests.
+    </p>
+
+    <div style="text-align: center; margin: 28px 0 16px 0;">
+        <a href="{portal_url or 'https://yashodeep-crm.vercel.app'}" 
+           style="background-color: #4338ca; color: #ffffff; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; display: inline-block; font-size: 14px;">
+            Access Student Portal &amp; Pay Dues
+        </a>
+    </div>
+    """
+
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
+    }

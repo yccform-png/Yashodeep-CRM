@@ -31,6 +31,8 @@ from app.modules.notifications.templates import (
     format_exam_result_whatsapp,
     format_exam_result_email,
     format_admission_welcome_whatsapp,
+    format_promotion_confirmation_whatsapp,
+    format_promotion_confirmation_email,
     wrap_html_email
 )
 
@@ -815,6 +817,167 @@ class NotificationDispatcher:
 
             except Exception as e:
                 logger.error(f"Error in dispatch_admission_welcome: {e}", exc_info=True)
+
+    # -------------------------------------------------------------------------
+    # 6. PROMOTION & ACADEMIC ROLLOVER CONFIRMATION
+    # -------------------------------------------------------------------------
+    async def dispatch_promotion_confirmation(
+        self,
+        student_id: uuid.UUID,
+        new_enrollment_id: uuid.UUID,
+        old_enrollment_id: Optional[uuid.UUID] = None,
+        invoice_id: Optional[uuid.UUID] = None
+    ):
+        """Dispatches promotion confirmation notifications via WhatsApp & Email to parents & student."""
+        async with AsyncSessionLocal() as db:
+            try:
+                # 1. Fetch Student & Guardians
+                query = (
+                    select(Student)
+                    .options(
+                        selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian)
+                    )
+                    .where(Student.id == student_id)
+                )
+                student = (await db.execute(query)).scalar_one_or_none()
+                if not student:
+                    return
+
+                # 2. Fetch New Enrollment details
+                new_enr_query = (
+                    select(Enrollment)
+                    .options(
+                        selectinload(Enrollment.academic_class),
+                        selectinload(Enrollment.course),
+                        selectinload(Enrollment.batch),
+                        selectinload(Enrollment.academic_year)
+                    )
+                    .where(Enrollment.id == new_enrollment_id)
+                )
+                new_enr = (await db.execute(new_enr_query)).scalar_one_or_none()
+                if not new_enr:
+                    return
+
+                old_class_name = "Previous Standard"
+                if old_enrollment_id:
+                    old_enr = await db.get(Enrollment, old_enrollment_id)
+                    if old_enr and old_enr.class_id:
+                        old_cls = await db.get(Class, old_enr.class_id)
+                        if old_cls:
+                            old_class_name = old_cls.name
+
+                new_class_name = new_enr.academic_class.name if new_enr.academic_class else "Next Standard"
+                new_batch_name = new_enr.batch.name if new_enr.batch else (new_enr.course.name if new_enr.course else "All Batches")
+                ay_name = new_enr.academic_year.name if new_enr.academic_year else "2027-2028"
+
+                # 3. Fetch Invoice if linked
+                inv_number = "INV-PENDING"
+                inv_total = "0.00"
+                installments_data = []
+                if invoice_id:
+                    inv_query = (
+                        select(Invoice)
+                        .options(
+                            selectinload(Invoice.installment_plan)
+                            .selectinload(InstallmentPlan.installments)
+                        )
+                        .where(Invoice.id == invoice_id)
+                    )
+                    inv = (await db.execute(inv_query)).scalar_one_or_none()
+                    if inv:
+                        inv_number = inv.invoice_number
+                        inv_total = f"{float(inv.total_amount):,.2f}"
+                        if inv.installment_plan and inv.installment_plan.installments:
+                            installments_data = [
+                                {
+                                    "number": inst.installment_number,
+                                    "due_date": inst.due_date.isoformat(),
+                                    "amount": float(inst.amount)
+                                }
+                                for inst in inv.installment_plan.installments
+                            ]
+
+                # Resolve recipient details
+                parent_name = f"Mr./Mrs. {student.last_name}"
+                target_phone = student.mobile
+                target_email = student.email
+                if student.guardians:
+                    primary_g = student.guardians[0].guardian
+                    if primary_g:
+                        parent_name = f"{primary_g.first_name} {primary_g.last_name}"
+                        if primary_g.mobile:
+                            target_phone = primary_g.mobile
+                        if primary_g.email:
+                            target_email = primary_g.email
+
+                student_full_name = f"{student.first_name} {student.last_name}".strip()
+                prn = student.prn or student.student_code
+
+                # A. Meta WhatsApp Dispatch
+                if target_phone and meta_whatsapp_client.is_configured:
+                    wa_payload = format_promotion_confirmation_whatsapp(
+                        parent_name=parent_name,
+                        student_name=student_full_name,
+                        promoted_class_name=new_class_name,
+                        academic_year_name=ay_name,
+                        invoice_number=inv_number,
+                        total_amount=f"₹{inv_total}"
+                    )
+                    outbox = await self._record_outbox(
+                        db,
+                        recipient_type="PARENT",
+                        recipient_id=student.id,
+                        recipient_target=target_phone,
+                        channel="WHATSAPP",
+                        payload=wa_payload
+                    )
+                    try:
+                        await meta_whatsapp_client.send_template_message(
+                            to_phone=target_phone,
+                            template_name=wa_payload["template_name"],
+                            components=wa_payload["components"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch promotion WhatsApp to {target_phone}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+                # B. Brevo Email Dispatch
+                if target_email and brevo_email_client.is_configured:
+                    email_payload = format_promotion_confirmation_email(
+                        student_name=student_full_name,
+                        prn=prn,
+                        old_class_name=old_class_name,
+                        new_class_name=new_class_name,
+                        new_batch_name=new_batch_name,
+                        academic_year_name=ay_name,
+                        invoice_number=inv_number,
+                        total_amount=inv_total,
+                        installments=installments_data
+                    )
+                    outbox = await self._record_outbox(
+                        db,
+                        recipient_type="PARENT",
+                        recipient_id=student.id,
+                        recipient_target=target_email,
+                        channel="EMAIL",
+                        payload={"subject": email_payload["subject"]}
+                    )
+                    try:
+                        await brevo_email_client.send_transactional_email(
+                            to_email=target_email,
+                            to_name=parent_name,
+                            subject=email_payload["subject"],
+                            html_content=email_payload["html_content"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch promotion Email to {target_email}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+            except Exception as e:
+                logger.error(f"Error in dispatch_promotion_confirmation: {e}", exc_info=True)
 
 
 notification_dispatcher = NotificationDispatcher()
