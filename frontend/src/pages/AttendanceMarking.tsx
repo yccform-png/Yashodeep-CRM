@@ -15,7 +15,9 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertCircle,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import apiClient from '../api/client';
 
@@ -87,6 +89,12 @@ export const AttendanceMarking: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [isAlreadyMarked, setIsAlreadyMarked] = useState<boolean>(false);
 
+  // Pagination, Search & Filter for Enrolled Roster
+  const [rosterPage, setRosterPage] = useState<number>(1);
+  const [rosterPageSize, setRosterPageSize] = useState<number>(10);
+  const [rosterSearch, setRosterSearch] = useState<string>('');
+  const [rosterStatusFilter, setRosterStatusFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'LATE'>('ALL');
+
   // Group batchSubjects by batch_id into unique batches
   const batchGroups: BatchGroup[] = React.useMemo(() => {
     const map = new Map<string, BatchGroup>();
@@ -152,6 +160,7 @@ export const AttendanceMarking: React.FC = () => {
       const dateToUse = targetDate || sessionDate;
       const res = await apiClient.get<StudentRosterItem[]>(`/attendance/batch-subjects/${bsId}/students?session_date=${dateToUse}`);
       setRoster(res.data);
+      setRosterPage(1);
 
       const hasMarked = res.data.some((s) => s.marked_status != null);
       setIsAlreadyMarked(hasMarked);
@@ -178,6 +187,9 @@ export const AttendanceMarking: React.FC = () => {
 
   const handleBatchChange = (newBatchId: string) => {
     setSelectedBatchId(newBatchId);
+    setRosterPage(1);
+    setRosterSearch('');
+    setRosterStatusFilter('ALL');
     const targetGroup = batchGroups.find((b) => b.batch_id === newBatchId);
     if (targetGroup && targetGroup.subjects.length > 0) {
       const firstSubj = targetGroup.subjects[0];
@@ -192,6 +204,9 @@ export const AttendanceMarking: React.FC = () => {
 
   const handleSubjectChange = (newBatchSubjId: string) => {
     setSelectedBatchSubjectId(newBatchSubjId);
+    setRosterPage(1);
+    setRosterSearch('');
+    setRosterStatusFilter('ALL');
     if (newBatchSubjId) {
       fetchRoster(newBatchSubjId, sessionDate);
     }
@@ -199,6 +214,7 @@ export const AttendanceMarking: React.FC = () => {
 
   const handleDateChange = (newDate: string) => {
     setSessionDate(newDate);
+    setRosterPage(1);
     if (selectedBatchSubjectId) {
       fetchRoster(selectedBatchSubjectId, newDate);
     }
@@ -212,8 +228,10 @@ export const AttendanceMarking: React.FC = () => {
   };
 
   const setAllStatus = (status: 'PRESENT' | 'ABSENT' | 'LATE') => {
-    const updated: Record<string, 'PRESENT' | 'ABSENT' | 'LATE'> = {};
-    roster.forEach((s) => {
+    const updated: Record<string, 'PRESENT' | 'ABSENT' | 'LATE'> = { ...attendanceMap };
+    // If search/filter active, mark only the filtered students; otherwise mark entire batch
+    const target = filteredRoster.length < roster.length ? filteredRoster : roster;
+    target.forEach((s) => {
       updated[s.student_id] = status;
     });
     setAttendanceMap(updated);
@@ -271,6 +289,53 @@ export const AttendanceMarking: React.FC = () => {
   const presentCount = Object.values(attendanceMap).filter((v) => v === 'PRESENT').length;
   const absentCount = Object.values(attendanceMap).filter((v) => v === 'ABSENT').length;
   const lateCount = Object.values(attendanceMap).filter((v) => v === 'LATE').length;
+
+  // Filtered Roster based on quick search and status pills
+  const filteredRoster = React.useMemo(() => {
+    let list = roster;
+    if (rosterSearch.trim()) {
+      const q = rosterSearch.toLowerCase().trim();
+      list = list.filter((s) => {
+        const fullName = `${s.first_name} ${s.last_name}`.toLowerCase();
+        const prn = (s.prn || s.student_code ? (s.prn || s.student_code).replace('STU-', 'PRN-') : '').toLowerCase();
+        const roll = s.roll_number != null ? String(s.roll_number) : '';
+        return fullName.includes(q) || prn.includes(q) || roll === q;
+      });
+    }
+    if (rosterStatusFilter !== 'ALL') {
+      list = list.filter((s) => (attendanceMap[s.student_id] || 'PRESENT') === rosterStatusFilter);
+    }
+    return list;
+  }, [roster, rosterSearch, rosterStatusFilter, attendanceMap]);
+
+  const totalRosterCount = filteredRoster.length;
+  const totalRosterPages = Math.max(1, Math.ceil(totalRosterCount / rosterPageSize));
+  const safeRosterPage = Math.min(rosterPage, totalRosterPages);
+
+  const paginatedRoster = React.useMemo(() => {
+    if (rosterPageSize >= 1000) return filteredRoster;
+    const start = (safeRosterPage - 1) * rosterPageSize;
+    return filteredRoster.slice(start, start + rosterPageSize);
+  }, [filteredRoster, safeRosterPage, rosterPageSize]);
+
+  const startRosterItem = totalRosterCount > 0 ? (safeRosterPage - 1) * rosterPageSize + 1 : 0;
+  const endRosterItem = Math.min(safeRosterPage * rosterPageSize, totalRosterCount);
+
+  const getRosterPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalRosterPages <= 5) {
+      for (let i = 1; i <= totalRosterPages; i++) pages.push(i);
+    } else {
+      if (safeRosterPage <= 3) {
+        pages.push(1, 2, 3, '...', totalRosterPages);
+      } else if (safeRosterPage >= totalRosterPages - 2) {
+        pages.push(1, '...', totalRosterPages - 2, totalRosterPages - 1, totalRosterPages);
+      } else {
+        pages.push(1, '...', safeRosterPage, '...', totalRosterPages);
+      }
+    }
+    return pages;
+  };
 
   return (
     <div className="space-y-6">
@@ -467,40 +532,118 @@ export const AttendanceMarking: React.FC = () => {
 
           {/* Student Roster Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center space-x-2">
-                <Users className="w-5 h-5 text-teal-600" />
-                <span className="font-bold text-slate-900 text-sm">Enrolled Roster ({roster.length} Students)</span>
+            <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-5 h-5 text-teal-600" />
+                  <span className="font-bold text-slate-900 text-sm">
+                    Enrolled Roster ({roster.length} {roster.length === 1 ? 'Student' : 'Students'})
+                  </span>
+                </div>
+
+                {/* Fast Bulk Actions */}
+                <div className="flex items-center space-x-2 text-xs font-semibold">
+                  <span className="text-slate-500">Mark All:</span>
+                  <button
+                    type="button"
+                    onClick={() => setAllStatus('PRESENT')}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-all font-bold"
+                  >
+                    All Present
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllStatus('ABSENT')}
+                    className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 hover:bg-rose-200 transition-all font-bold"
+                  >
+                    All Absent
+                  </button>
+                </div>
               </div>
 
-              {/* Fast Bulk Actions */}
-              <div className="flex items-center space-x-2 text-xs font-semibold">
-                <span className="text-slate-500">Mark All:</span>
-                <button
-                  type="button"
-                  onClick={() => setAllStatus('PRESENT')}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-all"
-                >
-                  All Present
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAllStatus('ABSENT')}
-                  className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 hover:bg-rose-200 transition-all"
-                >
-                  All Absent
-                </button>
-              </div>
+              {/* Quick Search & Status Filter Row (Shown when batch has students) */}
+              {roster.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-200/60">
+                  {/* Live Search Input */}
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search student by name, roll #, PRN..."
+                      value={rosterSearch}
+                      onChange={(e) => {
+                        setRosterSearch(e.target.value);
+                        setRosterPage(1);
+                      }}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 placeholder:text-slate-400 font-medium"
+                    />
+                    {rosterSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRosterSearch('');
+                          setRosterPage(1);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Status Filter Pills */}
+                  <div className="flex items-center space-x-1 overflow-x-auto pb-0.5 sm:pb-0">
+                    {[
+                      { key: 'ALL', label: `All (${roster.length})` },
+                      { key: 'PRESENT', label: `Present (${presentCount})` },
+                      { key: 'ABSENT', label: `Absent (${absentCount})` },
+                      { key: 'LATE', label: `Late (${lateCount})` },
+                    ].map((pill) => (
+                      <button
+                        key={pill.key}
+                        type="button"
+                        onClick={() => {
+                          setRosterStatusFilter(pill.key as any);
+                          setRosterPage(1);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                          rosterStatusFilter === pill.key
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {pill.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {roster.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-sm">
                 No active students currently enrolled in this batch.
               </div>
+            ) : filteredRoster.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-sm space-y-2">
+                <p>No students match the current search or status filter.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRosterSearch('');
+                    setRosterStatusFilter('ALL');
+                    setRosterPage(1);
+                  }}
+                  className="text-xs font-bold text-teal-600 hover:text-teal-700 underline"
+                >
+                  Clear filters
+                </button>
+              </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {roster.map((s, idx) => {
+                {paginatedRoster.map((s, idx) => {
                   const currentStatus = attendanceMap[s.student_id] || 'PRESENT';
+                  const displayIndex = (safeRosterPage - 1) * rosterPageSize + idx + 1;
 
                   return (
                     <div
@@ -514,7 +657,7 @@ export const AttendanceMarking: React.FC = () => {
                           </span>
                         ) : (
                           <span className="text-xs font-mono font-bold text-slate-400 w-6 shrink-0">
-                            {idx + 1}.
+                            {displayIndex}.
                           </span>
                         )}
                         <div>
@@ -571,6 +714,88 @@ export const AttendanceMarking: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Pagination Toolbar */}
+            {totalRosterCount > 0 && (
+              <div className="p-3 sm:p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs bg-slate-50/60">
+                <div className="text-slate-500 text-[11px]">
+                  Showing <span className="font-semibold text-slate-800">{startRosterItem}</span> to{' '}
+                  <span className="font-semibold text-slate-800">{endRosterItem}</span> of{' '}
+                  <span className="font-bold text-slate-900">{totalRosterCount}</span> students
+                  {totalRosterCount < roster.length && (
+                    <span className="text-slate-400 ml-1">(filtered from {roster.length})</span>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-500">
+                    <span>Per page:</span>
+                    <select
+                      value={rosterPageSize}
+                      onChange={(e) => {
+                        setRosterPageSize(parseInt(e.target.value, 10));
+                        setRosterPage(1);
+                      }}
+                      className="p-1 px-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 font-semibold focus:outline-none"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={1000}>All</option>
+                    </select>
+                  </div>
+
+                  {totalRosterPages > 1 && (
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        disabled={safeRosterPage <= 1}
+                        onClick={() => setRosterPage((prev) => Math.max(1, prev - 1))}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                        title="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+
+                      <div className="hidden sm:flex items-center space-x-1">
+                        {getRosterPageNumbers().map((p, idx) =>
+                          typeof p === 'number' ? (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setRosterPage(p)}
+                              className={`w-7 h-7 rounded-lg text-xs font-semibold transition ${
+                                safeRosterPage === p
+                                  ? 'bg-teal-600 text-white shadow-xs'
+                                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ) : (
+                            <span key={idx} className="px-1 text-slate-400">...</span>
+                          )
+                        )}
+                      </div>
+
+                      <span className="sm:hidden text-xs text-slate-600 font-medium px-2">
+                        {safeRosterPage} / {totalRosterPages}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={safeRosterPage >= totalRosterPages}
+                        onClick={() => setRosterPage((prev) => Math.min(totalRosterPages, prev + 1))}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                        title="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
