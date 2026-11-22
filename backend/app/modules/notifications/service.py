@@ -15,7 +15,7 @@ from app.models.notification import NotificationOutbox, Notification
 from app.models.student import Student, StudentGuardian, Guardian
 from app.models.academic import BatchSubject, Batch, Subject, Class, Course
 from app.models.attendance import AttendanceSession, AttendanceRecord
-from app.models.fee import Payment, Invoice, Installment
+from app.models.fee import Payment, PaymentAllocation, Invoice, InstallmentPlan, Installment, Receipt
 from app.models.examination import Examination, ExamResult
 from app.models.enrollment import Enrollment
 
@@ -263,7 +263,11 @@ class NotificationDispatcher:
                         selectinload(Payment.student)
                         .selectinload(Student.guardians)
                         .selectinload(StudentGuardian.guardian),
-                        selectinload(Payment.allocations).selectinload(Invoice.enrollment)
+                        selectinload(Payment.receipt),
+                        selectinload(Payment.allocations)
+                        .selectinload(PaymentAllocation.invoice)
+                        .selectinload(Invoice.enrollment)
+                        .selectinload(Enrollment.course)
                     )
                     .where(Payment.id == payment_id)
                 )
@@ -278,14 +282,35 @@ class NotificationDispatcher:
                 parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                 # Calculate remaining balance across invoices
-                first_inv = pay.allocations[0].invoice if pay.allocations and pay.allocations[0].invoice else None
+                first_alloc = pay.allocations[0] if pay.allocations else None
+                first_inv = first_alloc.invoice if first_alloc and getattr(first_alloc, "invoice", None) else None
                 inv_number = first_inv.invoice_number if first_inv else "INV-ACADEMIC"
                 balance_amount = float(first_inv.balance_amount) if first_inv else 0.0
-                course_name = first_inv.course_name if first_inv and hasattr(first_inv, "course_name") and first_inv.course_name else "Academic Tuition"
-                receipt_num = pay.receipt_number or pay.payment_number or f"RCP-{pay.id.hex[:8].upper()}"
+
+                course_name = "Academic Tuition"
+                if first_inv and getattr(first_inv, "enrollment", None):
+                    enr = first_inv.enrollment
+                    if getattr(enr, "course", None):
+                        course_name = enr.course.name
+
+                receipt_num = None
+                if getattr(pay, "receipt", None) and getattr(pay.receipt, "receipt_number", None):
+                    receipt_num = pay.receipt.receipt_number
+                elif getattr(pay, "payment_number", None):
+                    receipt_num = pay.payment_number
+                else:
+                    receipt_num = f"RCP-{pay.id.hex[:8].upper()}"
+
+                payment_method = getattr(pay, "payment_method", "ONLINE")
 
                 # 1. WhatsApp Receipt
+                phones_to_send = []
                 if parent_phone:
+                    phones_to_send.append(parent_phone)
+                if stu.mobile and stu.mobile != parent_phone:
+                    phones_to_send.append(stu.mobile)
+
+                for target_phone in phones_to_send:
                     wa_payload = format_payment_receipt_whatsapp(
                         parent_name=parent_name,
                         amount=float(pay.amount),
@@ -297,50 +322,56 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="PAYMENT_RECEIPT",
-                        recipient_target=parent_phone,
+                        recipient_target=target_phone,
                         channel="WHATSAPP",
                         payload=wa_payload
                     )
                     try:
                         await meta_whatsapp_client.send_template_message(
-                            to_phone=parent_phone,
+                            to_phone=target_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
                         await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch payment WhatsApp to {parent_phone}: {exc}")
+                        logger.error(f"Failed to dispatch payment WhatsApp to {target_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
-                # 2. Email Receipt
+                # 2. Email Receipt (both parent and student if emails on record)
+                emails_to_send = []
                 if parent_email:
+                    emails_to_send.append((parent_email, parent_name))
+                if stu.email and (not parent_email or stu.email.lower() != parent_email.lower()):
+                    emails_to_send.append((stu.email, student_name))
+
+                for target_email, target_name in emails_to_send:
                     email_data = format_payment_receipt_email(
-                        parent_name=parent_name,
+                        parent_name=target_name,
                         amount=float(pay.amount),
                         student_name=student_name,
                         invoice_number=inv_number,
                         receipt_number=receipt_num,
-                        payment_mode=pay.payment_mode,
+                        payment_mode=payment_method,
                         balance=balance_amount,
                         course_name=course_name
                     )
                     outbox = await self._log_outbox(
                         db,
                         event_type="PAYMENT_RECEIPT",
-                        recipient_target=parent_email,
+                        recipient_target=target_email,
                         channel="EMAIL",
                         payload={"subject": email_data["subject"]}
                     )
                     try:
                         await brevo_email_client.send_transactional_email(
-                            to_email=parent_email,
-                            to_name=parent_name,
+                            to_email=target_email,
+                            to_name=target_name,
                             subject=email_data["subject"],
                             html_content=email_data["html_content"]
                         )
                         await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch payment Email to {parent_email}: {exc}")
+                        logger.error(f"Failed to dispatch payment Email to {target_email}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
             except Exception as e:
@@ -350,7 +381,7 @@ class NotificationDispatcher:
     # 3. FEE DUE / OVERDUE REMINDER
     # -------------------------------------------------------------------------
     async def dispatch_fee_reminder(self, invoice_id: uuid.UUID, installment_id: Optional[uuid.UUID] = None):
-        """Dispatches an upcoming fee installment due reminder via WhatsApp."""
+        """Dispatches an upcoming fee installment due reminder via WhatsApp and Email."""
         async with AsyncSessionLocal() as db:
             try:
                 query = (
@@ -359,7 +390,8 @@ class NotificationDispatcher:
                         selectinload(Invoice.student)
                         .selectinload(Student.guardians)
                         .selectinload(StudentGuardian.guardian),
-                        selectinload(Invoice.installments)
+                        selectinload(Invoice.installment_plan)
+                        .selectinload(InstallmentPlan.installments)
                     )
                     .where(Invoice.id == invoice_id)
                 )
@@ -374,11 +406,12 @@ class NotificationDispatcher:
 
                 # Target installment
                 target_inst = None
+                installments = inv.installment_plan.installments if getattr(inv, "installment_plan", None) else []
                 if installment_id:
-                    target_inst = next((i for i in inv.installments if i.id == installment_id), None)
+                    target_inst = next((i for i in installments if i.id == installment_id), None)
                 if not target_inst:
                     # Pick first unpaid installment
-                    unpaid = [i for i in inv.installments if i.status != "PAID"]
+                    unpaid = [i for i in installments if i.status != "PAID"]
                     target_inst = unpaid[0] if unpaid else None
 
                 if not target_inst or not parent_phone:
@@ -408,6 +441,9 @@ class NotificationDispatcher:
                 except Exception as exc:
                     logger.error(f"Failed to dispatch fee reminder to {parent_phone}: {exc}")
                     await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+            except Exception as e:
+                logger.error(f"Error in dispatch_fee_reminder: {e}", exc_info=True)
 
             except Exception as e:
                 logger.error(f"Error in dispatch_fee_reminder: {e}", exc_info=True)
