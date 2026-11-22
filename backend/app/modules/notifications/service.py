@@ -144,9 +144,11 @@ class NotificationDispatcher:
                         .selectinload(AttendanceRecord.student)
                         .selectinload(Student.guardians)
                         .selectinload(StudentGuardian.guardian),
-                        selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.batch),
-                        selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.subject),
-                        selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.batch).selectinload(Batch.academic_class)
+                        selectinload(AttendanceSession.batch_subject)
+                        .selectinload(BatchSubject.batch)
+                        .selectinload(Batch.course)
+                        .selectinload(Course.academic_class),
+                        selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.subject)
                     )
                     .where(AttendanceSession.id == session_id)
                 )
@@ -158,7 +160,13 @@ class NotificationDispatcher:
 
                 bs = sess.batch_subject
                 subject_name = bs.subject.name if bs and bs.subject else "Lecture"
-                class_name = bs.batch.academic_class.name if bs and bs.batch and bs.batch.academic_class else "Regular Batch"
+                class_name = "Regular Batch"
+                if bs and bs.batch:
+                    if getattr(bs.batch, "name", None):
+                        class_name = bs.batch.name
+                    elif getattr(bs.batch, "course", None):
+                        c = bs.batch.course
+                        class_name = getattr(getattr(c, "academic_class", None), "name", None) or c.name
                 date_str = str(sess.session_date)
 
                 absent_records = [r for r in sess.records if r.status == "ABSENT"]
@@ -173,7 +181,13 @@ class NotificationDispatcher:
                     parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                     # 1. WhatsApp Alert
+                    phones_to_send = []
                     if parent_phone:
+                        phones_to_send.append(parent_phone)
+                    if stu.mobile and stu.mobile != parent_phone:
+                        phones_to_send.append(stu.mobile)
+
+                    for target_phone in phones_to_send:
                         wa_template = format_attendance_absent_whatsapp(
                             parent_name=parent_name,
                             student_name=student_name,
@@ -184,25 +198,31 @@ class NotificationDispatcher:
                         outbox = await self._log_outbox(
                             db,
                             event_type="ATTENDANCE_ABSENT",
-                            recipient_target=parent_phone,
+                            recipient_target=target_phone,
                             channel="WHATSAPP",
                             payload=wa_template
                         )
                         try:
                             await meta_whatsapp_client.send_template_message(
-                                to_phone=parent_phone,
+                                to_phone=target_phone,
                                 template_name=wa_template["template_name"],
                                 components=wa_template["components"]
                             )
                             await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
-                            logger.error(f"Failed to dispatch absence WhatsApp to {parent_phone}: {exc}")
+                            logger.error(f"Failed to dispatch absence WhatsApp to {target_phone}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
-                    # 2. Email Alert (if email on record)
+                    # 2. Email Alert (if email on record for guardian or student)
+                    emails_to_send = []
                     if parent_email:
+                        emails_to_send.append((parent_email, parent_name))
+                    if stu.email and (not parent_email or stu.email.lower() != parent_email.lower()):
+                        emails_to_send.append((stu.email, student_name))
+
+                    for target_email, target_name in emails_to_send:
                         email_data = format_attendance_absent_email(
-                            parent_name=parent_name,
+                            parent_name=target_name,
                             student_name=student_name,
                             subject_name=subject_name,
                             class_name=class_name,
@@ -211,20 +231,20 @@ class NotificationDispatcher:
                         outbox = await self._log_outbox(
                             db,
                             event_type="ATTENDANCE_ABSENT",
-                            recipient_target=parent_email,
+                            recipient_target=target_email,
                             channel="EMAIL",
                             payload={"subject": email_data["subject"]}
                         )
                         try:
                             await brevo_email_client.send_transactional_email(
-                                to_email=parent_email,
-                                to_name=parent_name,
+                                to_email=target_email,
+                                to_name=target_name,
                                 subject=email_data["subject"],
                                 html_content=email_data["html_content"]
                             )
                             await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
-                            logger.error(f"Failed to dispatch absence Email to {parent_email}: {exc}")
+                            logger.error(f"Failed to dispatch absence Email to {target_email}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
             except Exception as e:
