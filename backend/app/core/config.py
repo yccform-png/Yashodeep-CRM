@@ -31,7 +31,12 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         if self.DATABASE_URL:
-            return self.DATABASE_URL
+            url = self.DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return url
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     @computed_field
@@ -39,6 +44,13 @@ class Settings(BaseSettings):
     def sync_database_url(self) -> str:
         if self.SYNC_DATABASE_URL:
             return self.SYNC_DATABASE_URL
+        if self.DATABASE_URL:
+            url = self.DATABASE_URL
+            if url.startswith("postgresql+asyncpg://"):
+                url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            elif url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return url
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     # Redis
