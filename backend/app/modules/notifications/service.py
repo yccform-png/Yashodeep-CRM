@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import AsyncSessionLocal
 from app.models.notification import NotificationOutbox, Notification
-from app.models.student import Student, StudentGuardian
+from app.models.student import Student, StudentGuardian, Guardian
 from app.models.academic import BatchSubject, Batch, Subject, Class, Course
 from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.fee import Payment, Invoice, Installment
@@ -82,6 +82,53 @@ class NotificationDispatcher:
                 entry.error_message = str(error_message)[:1000]
             await db.commit()
 
+    def _resolve_contact(self, stu: Student):
+        """
+        Safely extracts parent/guardian contact info from Student and associated Guardian(s).
+        Handles StudentGuardian junction model safely without throwing AttributeError.
+        """
+        guardians = getattr(stu, "guardians", []) or []
+        sg = next((g for g in guardians if getattr(g, "receives_notifications", False)), None)
+        if not sg:
+            sg = next((g for g in guardians if getattr(g, "is_primary", False)), None)
+        if not sg and guardians:
+            sg = guardians[0]
+
+        guardian_obj = getattr(sg, "guardian", None) if sg else None
+
+        parent_name = "Parent / Guardian"
+        parent_phone = None
+        parent_email = None
+
+        if guardian_obj:
+            fname = getattr(guardian_obj, "first_name", "") or ""
+            lname = getattr(guardian_obj, "last_name", "") or ""
+            full = f"{fname} {lname}".strip()
+            if full:
+                parent_name = full
+            parent_phone = getattr(guardian_obj, "mobile", None)
+            parent_email = getattr(guardian_obj, "email", None)
+        elif sg and hasattr(sg, "mobile"):
+            fname = getattr(sg, "first_name", "") or ""
+            lname = getattr(sg, "last_name", "") or ""
+            full = f"{fname} {lname}".strip()
+            if full:
+                parent_name = full
+            parent_phone = getattr(sg, "mobile", None)
+            parent_email = getattr(sg, "email", None)
+
+        # Fallbacks to student details if guardian values are absent
+        if not parent_phone:
+            parent_phone = getattr(stu, "mobile", None)
+        if not parent_email:
+            parent_email = getattr(stu, "email", None)
+        if parent_name == "Parent / Guardian" and stu:
+            stu_name = f"{getattr(stu, 'first_name', '')} {getattr(stu, 'last_name', '')}".strip()
+            if stu_name:
+                parent_name = f"Parent of {stu_name}"
+
+        return parent_name, parent_phone, parent_email
+
     # -------------------------------------------------------------------------
     # 1. ATTENDANCE ABSENT ALERTS
     # -------------------------------------------------------------------------
@@ -93,7 +140,10 @@ class NotificationDispatcher:
                 query = (
                     select(AttendanceSession)
                     .options(
-                        selectinload(AttendanceSession.records).selectinload(AttendanceRecord.student).selectinload(Student.guardians),
+                        selectinload(AttendanceSession.records)
+                        .selectinload(AttendanceRecord.student)
+                        .selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian),
                         selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.batch),
                         selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.subject),
                         selectinload(AttendanceSession.batch_subject).selectinload(BatchSubject.batch).selectinload(Batch.academic_class)
@@ -119,14 +169,8 @@ class NotificationDispatcher:
                     if not stu:
                         continue
 
-                    student_name = f"{stu.first_name} {stu.last_name}"
-                    
-                    # Determine primary parent / guardian contact
-                    guardians = stu.guardians or []
-                    primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
-                    parent_name = f"{primary_guardian.first_name} {primary_guardian.last_name}" if primary_guardian else "Parent / Guardian"
-                    parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
-                    parent_email = primary_guardian.email if primary_guardian and primary_guardian.email else stu.email
+                    student_name = f"{stu.first_name} {stu.last_name}".strip()
+                    parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                     # 1. WhatsApp Alert
                     if parent_phone:
@@ -196,7 +240,9 @@ class NotificationDispatcher:
                 query = (
                     select(Payment)
                     .options(
-                        selectinload(Payment.student).selectinload(Student.guardians),
+                        selectinload(Payment.student)
+                        .selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian),
                         selectinload(Payment.allocations).selectinload(Invoice.enrollment)
                     )
                     .where(Payment.id == payment_id)
@@ -208,12 +254,8 @@ class NotificationDispatcher:
                     return
 
                 stu = pay.student
-                student_name = f"{stu.first_name} {stu.last_name}"
-                guardians = stu.guardians or []
-                primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
-                parent_name = f"{primary_guardian.first_name} {primary_guardian.last_name}" if primary_guardian else "Parent / Guardian"
-                parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
-                parent_email = primary_guardian.email if primary_guardian and primary_guardian.email else stu.email
+                student_name = f"{stu.first_name} {stu.last_name}".strip()
+                parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                 # Calculate remaining balance across invoices
                 first_inv = pay.allocations[0].invoice if pay.allocations and pay.allocations[0].invoice else None
@@ -294,7 +336,9 @@ class NotificationDispatcher:
                 query = (
                     select(Invoice)
                     .options(
-                        selectinload(Invoice.student).selectinload(Student.guardians),
+                        selectinload(Invoice.student)
+                        .selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian),
                         selectinload(Invoice.installments)
                     )
                     .where(Invoice.id == invoice_id)
@@ -305,11 +349,8 @@ class NotificationDispatcher:
                     return
 
                 stu = inv.student
-                student_name = f"{stu.first_name} {stu.last_name}"
-                guardians = stu.guardians or []
-                primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
-                parent_name = f"{primary_guardian.first_name} {primary_guardian.last_name}" if primary_guardian else "Parent / Guardian"
-                parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
+                student_name = f"{stu.first_name} {stu.last_name}".strip()
+                parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                 # Target installment
                 target_inst = None
@@ -361,7 +402,10 @@ class NotificationDispatcher:
                 query = (
                     select(Examination)
                     .options(
-                        selectinload(Examination.results).selectinload(ExamResult.student).selectinload(Student.guardians),
+                        selectinload(Examination.results)
+                        .selectinload(ExamResult.student)
+                        .selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian),
                         selectinload(Examination.exam_subjects).selectinload(ExamSubject.subject)
                     )
                     .where(Examination.id == exam_id)
@@ -381,11 +425,8 @@ class NotificationDispatcher:
                     if not stu:
                         continue
 
-                    student_name = f"{stu.first_name} {stu.last_name}"
-                    guardians = stu.guardians or []
-                    primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
-                    parent_name = f"{primary_guardian.first_name} {primary_guardian.last_name}" if primary_guardian else "Parent / Guardian"
-                    parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
+                    student_name = f"{stu.first_name} {stu.last_name}".strip()
+                    parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                     marks_obtained = float(r.total_obtained) if r.total_obtained is not None else 0.0
                     max_marks = float(r.total_possible) if r.total_possible is not None else 100.0
@@ -429,13 +470,20 @@ class NotificationDispatcher:
         """Dispatches welcome onboarding notifications via WhatsApp & Email upon student enrollment."""
         async with AsyncSessionLocal() as db:
             try:
-                query = select(Student).options(selectinload(Student.guardians)).where(Student.id == student_id)
+                query = (
+                    select(Student)
+                    .options(
+                        selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian)
+                    )
+                    .where(Student.id == student_id)
+                )
                 res = await db.execute(query)
                 stu = res.scalar_one_or_none()
                 if not stu:
                     return
 
-                student_name = f"{stu.first_name} {stu.last_name}"
+                student_name = f"{stu.first_name} {stu.last_name}".strip()
                 prn = stu.prn or stu.student_code or "PRN-PENDING"
                 
                 # Fetch course name
@@ -453,13 +501,16 @@ class NotificationDispatcher:
                         elif enr.academic_class:
                             course_name = enr.academic_class.name
 
-                guardians = stu.guardians or []
-                primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
-                parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
-                parent_email = primary_guardian.email if primary_guardian and primary_guardian.email else stu.email
+                parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
                 # 1. WhatsApp Welcome
+                phones_to_send = []
                 if parent_phone:
+                    phones_to_send.append(parent_phone)
+                if stu.mobile and stu.mobile != parent_phone:
+                    phones_to_send.append(stu.mobile)
+
+                for target_phone in phones_to_send:
                     wa_payload = format_admission_welcome_whatsapp(
                         student_name=student_name,
                         course_name=course_name,
@@ -468,28 +519,34 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="ADMISSION_CONFIRMED",
-                        recipient_target=parent_phone,
+                        recipient_target=target_phone,
                         channel="WHATSAPP",
                         payload=wa_payload
                     )
                     try:
                         await meta_whatsapp_client.send_template_message(
-                            to_phone=parent_phone,
+                            to_phone=target_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
                         await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch welcome WhatsApp to {parent_phone}: {exc}")
+                        logger.error(f"Failed to dispatch welcome WhatsApp to {target_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                 # 2. Email Welcome
+                emails_to_send = []
                 if parent_email:
+                    emails_to_send.append((parent_email, parent_name))
+                if stu.email and (not parent_email or stu.email.lower() != parent_email.lower()):
+                    emails_to_send.append((stu.email, student_name))
+
+                for target_email, target_name in emails_to_send:
                     subject = f"Welcome to Yashodeep Coaching Classes - Enrollment Confirmed ({prn})"
                     html_content = wrap_html_email(
                         title=subject,
                         content_body=f"""
-                        <p>Dear Student & Parents,</p>
+                        <p>Dear {target_name},</p>
                         <p>We are delighted to welcome <strong>{student_name}</strong> to the Yashodeep Coaching Classes academic family!</p>
                         <div class="card">
                           <p style="margin: 4px 0;"><strong>Permanent Registration Number (PRN):</strong> <span style="font-family: monospace; font-weight: bold; color: #4338ca;">{prn}</span></p>
@@ -502,20 +559,20 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="ADMISSION_CONFIRMED",
-                        recipient_target=parent_email,
+                        recipient_target=target_email,
                         channel="EMAIL",
                         payload={"subject": subject}
                     )
                     try:
                         await brevo_email_client.send_transactional_email(
-                            to_email=parent_email,
-                            to_name=student_name,
+                            to_email=target_email,
+                            to_name=target_name,
                             subject=subject,
                             html_content=html_content
                         )
                         await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch welcome Email to {parent_email}: {exc}")
+                        logger.error(f"Failed to dispatch welcome Email to {target_email}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
             except Exception as e:

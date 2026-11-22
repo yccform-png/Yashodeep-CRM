@@ -214,3 +214,47 @@ async def test_manual_test_dispatch_and_outbox(client: AsyncClient, auth_headers
     items = outbox_data["items"]
     assert any(i["channel"] == "WHATSAPP" for i in items)
     assert any(i["channel"] == "EMAIL" for i in items)
+
+
+def test_resolve_contact_with_student_guardian():
+    """Verify _resolve_contact handles StudentGuardian junction records and extracts mobile/email safely."""
+    from unittest.mock import MagicMock
+    from app.modules.notifications.service import notification_dispatcher
+
+    # Case 1: Student with StudentGuardian linking to Guardian
+    student = MagicMock()
+    student.first_name = "Aarav"
+    student.last_name = "Patil"
+    student.mobile = "9822011111"
+    student.email = "student@example.com"
+
+    guardian_obj = MagicMock()
+    guardian_obj.first_name = "Ramesh"
+    guardian_obj.last_name = "Patil"
+    guardian_obj.mobile = "9822022222"
+    guardian_obj.email = "parent@example.com"
+
+    sg = MagicMock(spec=["receives_notifications", "is_primary", "guardian"])
+    sg.receives_notifications = True
+    sg.is_primary = True
+    sg.guardian = guardian_obj
+
+    student.guardians = [sg]
+
+    p_name, p_phone, p_email = notification_dispatcher._resolve_contact(student)
+    assert p_name == "Ramesh Patil"
+    assert p_phone == "9822022222"
+    assert p_email == "parent@example.com"
+
+    # Case 2: Student without guardians (falls back safely)
+    student_no_guardians = MagicMock()
+    student_no_guardians.first_name = "Pooja"
+    student_no_guardians.last_name = "Sharma"
+    student_no_guardians.mobile = "9822033333"
+    student_no_guardians.email = "pooja@example.com"
+    student_no_guardians.guardians = []
+
+    p_name2, p_phone2, p_email2 = notification_dispatcher._resolve_contact(student_no_guardians)
+    assert p_name2 == "Parent of Pooja Sharma"
+    assert p_phone2 == "9822033333"
+    assert p_email2 == "pooja@example.com"
