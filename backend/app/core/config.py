@@ -1,3 +1,4 @@
+import urllib.parse
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import computed_field
@@ -36,6 +37,21 @@ class Settings(BaseSettings):
                 url = url.replace("postgres://", "postgresql+asyncpg://", 1)
             elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            
+            # Sanitize query parameters for asyncpg compatibility (e.g. Neon, AWS RDS, Supabase)
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.query:
+                query_params = urllib.parse.parse_qs(parsed.query)
+                # asyncpg uses 'ssl' instead of 'sslmode'
+                if "sslmode" in query_params:
+                    mode = query_params.pop("sslmode")[0]
+                    if mode in ("require", "verify-ca", "verify-full"):
+                        query_params["ssl"] = ["require"]
+                # Remove libpq parameters unsupported by asyncpg
+                query_params.pop("channel_binding", None)
+                query_params.pop("target_session_attrs", None)
+                new_query = urllib.parse.urlencode([(k, v) for k, vs in query_params.items() for v in vs])
+                url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, new_query, parsed.fragment))
             return url
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
