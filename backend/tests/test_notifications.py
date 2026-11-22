@@ -28,8 +28,10 @@ async def test_phone_number_normalization():
 
 
 @pytest.mark.asyncio
-async def test_meta_whatsapp_mock_sandbox_mode():
+async def test_meta_whatsapp_mock_sandbox_mode(monkeypatch):
     """Verify Meta WhatsApp client falls back to Mock Sandbox Mode when credentials are not configured."""
+    monkeypatch.setattr(settings, "META_WHATSAPP_ACCESS_TOKEN", None)
+    monkeypatch.setattr(settings, "META_WHATSAPP_ENABLED", False)
     res = await meta_whatsapp_client.send_template_message(
         to_phone="9822012345",
         template_name="ycc_attendance_absent",
@@ -53,8 +55,10 @@ async def test_meta_whatsapp_mock_sandbox_mode():
 
 
 @pytest.mark.asyncio
-async def test_brevo_email_mock_sandbox_mode():
+async def test_brevo_email_mock_sandbox_mode(monkeypatch):
     """Verify Brevo email client falls back to Mock Sandbox Mode when API key is not configured."""
+    monkeypatch.setattr(settings, "BREVO_API_KEY", None)
+    monkeypatch.setattr(settings, "BREVO_EMAIL_ENABLED", False)
     res = await brevo_email_client.send_transactional_email(
         to_email="parent@example.com",
         to_name="Parent Name",

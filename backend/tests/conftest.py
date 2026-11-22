@@ -64,8 +64,12 @@ def pytest_sessionfinish(session, exitstatus):
     """
     Automatic teardown hook:
     Ensures that any test records created during test runs are automatically
-    and completely purged, preserving only production master data and Harshvardhan Patil.
+    purged on test environments, while strictly guarding live production databases.
     """
+    if "neondb" in str(settings.DATABASE_URL or "") and not os.getenv("ALLOW_TEST_PURGE"):
+        print("\n>>> Live Neon Production Database detected: Skipping automatic test purge to preserve real production records.")
+        return
+
     import asyncio
     from scripts.cleanup_test_data import clean_database
     try:

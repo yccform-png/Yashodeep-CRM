@@ -70,7 +70,7 @@ class CacheService:
 
         self._loop = current_loop
         try:
-            self.pool = aioredis.ConnectionPool.from_url(
+            self.client = aioredis.from_url(
                 settings.REDIS_URL,
                 max_connections=50,
                 socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
@@ -78,7 +78,7 @@ class CacheService:
                 decode_responses=True,
                 encoding="utf-8"
             )
-            self.client = aioredis.Redis(connection_pool=self.pool)
+            self.pool = self.client.connection_pool
             await self.client.ping()
             self.is_connected = True
             return True
