@@ -28,7 +28,8 @@ import {
   AlertTriangle,
   Folder,
   FolderOpen,
-  FolderTree
+  FolderTree,
+  Bell
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -543,7 +544,7 @@ export const Examinations: React.FC = () => {
     setFeedback(null);
     try {
       await apiClient.post(`/examinations/${selectedExamId}/publish`);
-      setFeedback({ type: 'success', text: 'Test results published! Official scorecards & merit list generated.' });
+      setFeedback({ type: 'success', text: 'Test results published! Official scorecards dispatched to parents via WhatsApp & Email.' });
       await fetchExaminations();
       fetchExamDetails(selectedExamId);
     } catch (err: any) {
@@ -553,6 +554,25 @@ export const Examinations: React.FC = () => {
       });
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Dispatch Scorecards to Parents on demand
+  const [notifyingScorecards, setNotifyingScorecards] = useState(false);
+  const handleNotifyScorecards = async () => {
+    if (!selectedExamId) return;
+    setNotifyingScorecards(true);
+    setFeedback(null);
+    try {
+      await apiClient.post(`/examinations/${selectedExamId}/notify`);
+      setFeedback({ type: 'success', text: 'Scorecard notifications dispatched to parents and students via WhatsApp & Email!' });
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        text: err.response?.data?.detail || 'Failed to dispatch scorecard notifications.'
+      });
+    } finally {
+      setNotifyingScorecards(false);
     }
   };
 
@@ -1329,6 +1349,19 @@ export const Examinations: React.FC = () => {
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Publish Results &amp; Merit List</span>
+                    </button>
+                  )}
+
+                  {selectedExamDetail.is_published && canManage && (
+                    <button
+                      type="button"
+                      onClick={handleNotifyScorecards}
+                      disabled={notifyingScorecards}
+                      className="flex items-center space-x-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      title="Dispatch or resend official scorecards to parents and students via WhatsApp & Email"
+                    >
+                      <Bell className={`w-3.5 h-3.5 text-amber-600 ${notifyingScorecards ? 'animate-bounce' : ''}`} />
+                      <span>{notifyingScorecards ? 'Sending Scorecards...' : 'Send Scorecards to Parents'}</span>
                     </button>
                   )}
 

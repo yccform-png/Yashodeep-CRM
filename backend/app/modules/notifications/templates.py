@@ -2,7 +2,7 @@
 Notification Templates Engine for Meta WhatsApp Business & Brevo Transactional Email.
 Provides standard components formatting for Meta Cloud API and responsive HTML templates for Brevo.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 # -----------------------------------------------------------------------------
@@ -285,6 +285,61 @@ def format_exam_result_whatsapp(
                 ]
             }
         ]
+    }
+
+
+def format_exam_result_email(
+    parent_name: str,
+    student_name: str,
+    exam_name: str,
+    exam_code: str,
+    subject_name: str,
+    marks_obtained: float,
+    max_marks: float,
+    percentage: float,
+    grade: str,
+    is_pass: bool = True,
+    academic_class: Optional[str] = None
+) -> Dict[str, str]:
+    badge_label = "PASSED" if is_pass else "NEEDS IMPROVEMENT"
+    badge_class = "badge-emerald" if is_pass else "badge-rose"
+    border_color = "#059669" if is_pass else "#e11d48"
+    result_color = "#047857" if is_pass else "#be123c"
+    subject = f"Academic Performance Scorecard: {exam_name} - {student_name} ({marks_obtained:g}/{max_marks:g} • {percentage:.1f}%)"
+
+    class_row = f'<tr><td style="padding: 4px 0; color: #64748b;">Class / Standard:</td><td>{academic_class}</td></tr>' if academic_class else ''
+
+    body = f"""
+    <p>Dear <strong>{parent_name or 'Parent / Guardian'}</strong>,</p>
+    <p>The academic evaluation results for <strong>{student_name}</strong> have been officially published by Yashodeep Coaching Classes faculty.</p>
+    
+    <div class="card" style="border-left: 4px solid {border_color};">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 14px; font-weight: 800; color: {result_color};">Official Examination Scorecard</span>
+        <span class="badge {badge_class}">{badge_label}</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr><td style="padding: 4px 0; color: #64748b;">Student:</td><td style="font-weight: bold;">{student_name}</td></tr>
+        {class_row}
+        <tr><td style="padding: 4px 0; color: #64748b;">Examination:</td><td style="font-weight: bold;">{exam_name}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Assessment Code:</td><td style="font-family: monospace; font-weight: 600;">{exam_code}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Subject / Paper:</td><td style="font-weight: bold; color: #4338ca;">{subject_name}</td></tr>
+        <tr style="border-top: 1px dashed #cbd5e1;"><td style="padding: 8px 0; font-weight: bold; color: #0f172a;">Marks Obtained:</td><td style="font-weight: 800; font-size: 16px; color: {result_color};">{marks_obtained:g} / {max_marks:g}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Percentage:</td><td style="font-weight: 800; font-size: 15px; color: #0f172a;">{percentage:.1f}%</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Performance Grade:</td><td style="font-weight: 800; font-size: 14px; color: #4338ca;">{grade}</td></tr>
+      </table>
+    </div>
+
+    <p style="font-size: 13px; color: #475569; margin-top: 16px;">
+      Our faculty conducts regular evaluations to assess concept mastery, retention, and exam preparedness. For personalized academic feedback, please visit the institute during teacher interaction hours.
+    </p>
+    <p style="font-size: 12px; color: #64748b;">
+      Yashodeep Coaching Classes • Committed to Academic Excellence
+    </p>
+    """
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
     }
 
 

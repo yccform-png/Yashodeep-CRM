@@ -16,7 +16,7 @@ from app.models.student import Student, StudentGuardian, Guardian
 from app.models.academic import BatchSubject, Batch, Subject, Class, Course
 from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.fee import Payment, PaymentAllocation, Invoice, InstallmentPlan, Installment, Receipt
-from app.models.examination import Examination, ExamResult
+from app.models.examination import Examination, ExamResult, ExamSubject
 from app.models.enrollment import Enrollment
 
 from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
@@ -29,6 +29,7 @@ from app.modules.notifications.templates import (
     format_fee_reminder_whatsapp,
     format_fee_reminder_email,
     format_exam_result_whatsapp,
+    format_exam_result_email,
     format_admission_welcome_whatsapp,
     wrap_html_email
 )
@@ -585,7 +586,7 @@ class NotificationDispatcher:
     # 4. EXAM RESULT PUBLISHED
     # -------------------------------------------------------------------------
     async def dispatch_exam_results(self, exam_id: uuid.UUID):
-        """Dispatches WhatsApp test scorecards to parents when an examination is published."""
+        """Dispatches WhatsApp test scorecards and Brevo Email performance reports to parents and students when an examination is published."""
         async with AsyncSessionLocal() as db:
             try:
                 query = (
@@ -595,7 +596,8 @@ class NotificationDispatcher:
                         .selectinload(ExamResult.student)
                         .selectinload(Student.guardians)
                         .selectinload(StudentGuardian.guardian),
-                        selectinload(Examination.exam_subjects).selectinload(ExamSubject.subject)
+                        selectinload(Examination.exam_subjects).selectinload(ExamSubject.subject),
+                        selectinload(Examination.exam_subjects).selectinload(ExamSubject.academic_class)
                     )
                     .where(Examination.id == exam_id)
                 )
@@ -605,9 +607,13 @@ class NotificationDispatcher:
                     return
 
                 exam_name = exam.name
+                exam_code = exam.code or "EXAM"
                 # Derive subject name safely from exam_subjects relation
                 subject_names = [es.subject.name for es in (exam.exam_subjects or []) if es.subject]
                 subject_name = ", ".join(subject_names) if subject_names else (exam_name or "Curriculum Evaluation")
+
+                class_names = [es.academic_class.name for es in (exam.exam_subjects or []) if es.academic_class]
+                academic_class = ", ".join(sorted(set(class_names))) if class_names else None
 
                 for r in exam.results:
                     stu = r.student
@@ -620,7 +626,10 @@ class NotificationDispatcher:
                     marks_obtained = float(r.total_obtained) if r.total_obtained is not None else 0.0
                     max_marks = float(r.total_possible) if r.total_possible is not None else 100.0
                     percentage = float(r.percentage) if r.percentage is not None else round((marks_obtained / max_marks) * 100, 2)
+                    grade = r.grade or ("A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B+" if percentage >= 70 else ("B" if percentage >= 60 else "C"))))
+                    is_pass = bool(r.is_pass) if r.is_pass is not None else (percentage >= 35.0)
 
+                    # 1. WhatsApp Dispatch (to parent mobile)
                     if parent_phone:
                         wa_payload = format_exam_result_whatsapp(
                             parent_name=parent_name,
@@ -636,7 +645,7 @@ class NotificationDispatcher:
                             event_type="EXAM_RESULT_PUBLISHED",
                             recipient_target=parent_phone,
                             channel="WHATSAPP",
-                            payload=wa_payload
+                            payload={**wa_payload, "exam_id": str(exam.id), "student_id": str(stu.id)}
                         )
                         try:
                             await meta_whatsapp_client.send_template_message(
@@ -646,7 +655,47 @@ class NotificationDispatcher:
                             )
                             await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
-                            logger.error(f"Failed to dispatch exam result to {parent_phone}: {exc}")
+                            logger.error(f"Failed to dispatch exam result WhatsApp to {parent_phone}: {exc}")
+                            await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+                    # 2. Email Dispatch (to parent and student)
+                    emails_to_send = []
+                    if parent_email and "@" in parent_email:
+                        emails_to_send.append((parent_email, parent_name))
+                    if stu.email and "@" in stu.email and (not parent_email or stu.email.lower() != parent_email.lower()):
+                        emails_to_send.append((stu.email, student_name))
+
+                    for target_email, target_name in emails_to_send:
+                        email_data = format_exam_result_email(
+                            parent_name=target_name,
+                            student_name=student_name,
+                            exam_name=exam_name,
+                            exam_code=exam_code,
+                            subject_name=subject_name,
+                            marks_obtained=marks_obtained,
+                            max_marks=max_marks,
+                            percentage=percentage,
+                            grade=grade,
+                            is_pass=is_pass,
+                            academic_class=academic_class
+                        )
+                        outbox = await self._log_outbox(
+                            db,
+                            event_type="EXAM_RESULT_PUBLISHED",
+                            recipient_target=target_email,
+                            channel="EMAIL",
+                            payload={"subject": email_data["subject"], "exam_id": str(exam.id), "student_id": str(stu.id)}
+                        )
+                        try:
+                            await brevo_email_client.send_transactional_email(
+                                to_email=target_email,
+                                to_name=target_name,
+                                subject=email_data["subject"],
+                                html_content=email_data["html_content"]
+                            )
+                            await self._update_outbox_result(db, outbox.id, "SENT")
+                        except Exception as exc:
+                            logger.error(f"Failed to dispatch exam result Email to {target_email}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
             except Exception as e:

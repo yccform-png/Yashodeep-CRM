@@ -588,6 +588,30 @@ async def publish_results(
     return {"message": "Examination published successfully and student report cards generated"}
 
 
+@router.post("/{examination_id}/notify")
+async def notify_exam_results(
+    examination_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers scorecard notification dispatch (WhatsApp & Email) to parents and students.
+    """
+    exam = await db.get(Examination, examination_id)
+    if not exam:
+        raise NotFoundException(f"Examination {examination_id} not found")
+
+    background_tasks.add_task(
+        notification_dispatcher.dispatch_exam_results,
+        exam_id=examination_id
+    )
+    return {
+        "success": True,
+        "message": "Examination scorecards scheduled for dispatch via WhatsApp and Email"
+    }
+
+
 @router.get("/results/student/{student_id}", response_model=List[StudentResultResponse])
 async def get_student_results(
     student_id: uuid.UUID,
