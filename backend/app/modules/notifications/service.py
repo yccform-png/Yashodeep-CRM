@@ -361,7 +361,8 @@ class NotificationDispatcher:
                 query = (
                     select(Examination)
                     .options(
-                        selectinload(Examination.results).selectinload(ExamResult.student).selectinload(Student.guardians)
+                        selectinload(Examination.results).selectinload(ExamResult.student).selectinload(Student.guardians),
+                        selectinload(Examination.exam_subjects).selectinload(ExamSubject.subject)
                     )
                     .where(Examination.id == exam_id)
                 )
@@ -371,8 +372,9 @@ class NotificationDispatcher:
                     return
 
                 exam_name = exam.name
-                subject_name = exam.subject_name or "Curriculum Subject"
-                max_marks = float(exam.max_marks or 100.0)
+                # Derive subject name safely from exam_subjects relation
+                subject_names = [es.subject.name for es in (exam.exam_subjects or []) if es.subject]
+                subject_name = ", ".join(subject_names) if subject_names else (exam_name or "Curriculum Evaluation")
 
                 for r in exam.results:
                     stu = r.student
@@ -385,15 +387,19 @@ class NotificationDispatcher:
                     parent_name = f"{primary_guardian.first_name} {primary_guardian.last_name}" if primary_guardian else "Parent / Guardian"
                     parent_phone = primary_guardian.mobile if primary_guardian and primary_guardian.mobile else stu.mobile
 
+                    marks_obtained = float(r.total_obtained) if r.total_obtained is not None else 0.0
+                    max_marks = float(r.total_possible) if r.total_possible is not None else 100.0
+                    percentage = float(r.percentage) if r.percentage is not None else round((marks_obtained / max_marks) * 100, 2)
+
                     if parent_phone:
                         wa_payload = format_exam_result_whatsapp(
                             parent_name=parent_name,
                             exam_name=exam_name,
                             subject_name=subject_name,
                             student_name=student_name,
-                            marks_obtained=float(r.total_obtained),
+                            marks_obtained=marks_obtained,
                             max_marks=max_marks,
-                            percentage=float(r.percentage)
+                            percentage=percentage
                         )
                         outbox = await self._log_outbox(
                             db,
@@ -435,10 +441,17 @@ class NotificationDispatcher:
                 # Fetch course name
                 course_name = "Academic Coaching Program"
                 if enrollment_id:
-                    enr_res = await db.execute(select(Enrollment).where(Enrollment.id == enrollment_id))
+                    enr_res = await db.execute(
+                        select(Enrollment)
+                        .options(selectinload(Enrollment.course), selectinload(Enrollment.academic_class))
+                        .where(Enrollment.id == enrollment_id)
+                    )
                     enr = enr_res.scalar_one_or_none()
-                    if enr and enr.course_name:
-                        course_name = enr.course_name
+                    if enr:
+                        if enr.course:
+                            course_name = enr.course.name
+                        elif enr.academic_class:
+                            course_name = enr.academic_class.name
 
                 guardians = stu.guardians or []
                 primary_guardian = next((g for g in guardians if g.receives_notifications), None) or (guardians[0] if guardians else None)
