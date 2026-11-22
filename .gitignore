@@ -1,0 +1,80 @@
+# ==============================================================================
+# Git Ignore Configuration for Yashodeep Coaching Institute Management ERP
+# ==============================================================================
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+backend/venv/
+backend/.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js, Frontend & Build Artifacts
+node_modules/
+frontend/node_modules/
+.npm/
+dist/
+frontend/dist/
+dist-ssr/
+*.local
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# Operating System & IDE Artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+
+# Logs & Temporary Files
+*.log
+logs/
+*.sqlite
+*.sqlite3
+
+# Local Uploads & Static Storage
+uploads/
+media/
+exports/

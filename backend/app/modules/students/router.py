@@ -1,0 +1,718 @@
+import uuid
+from typing import List, Optional
+from datetime import date
+from fastapi import APIRouter, Depends, Query, status, Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_, func, delete
+from sqlalchemy.orm import selectinload
+
+from app.core.database import get_db
+from app.core.deps import get_current_user, require_role
+from app.core.exceptions import NotFoundException, ConflictException, BadRequestException
+from app.core.cache import cache_service, CacheKeys
+from app.models.user import User
+from app.models.student import Student, Guardian, StudentGuardian, StudentDocument
+from app.models.academic import BatchStudent, BatchSubject, Batch, Subject, Teacher, Course, CourseVersion, CourseVersionSubject
+from app.models.enrollment import Enrollment, EnrollmentSubject
+from app.models.service import StudentService, ServicePlan, ServiceType
+from app.models.fee import Invoice, Payment, InstallmentPlan, PaymentAllocation, Receipt, InvoiceItem, Installment
+from app.models.hostel import BedAllocation, HostelBed, HostelRoom
+from app.models.study_room import SeatAllocation, StudySeat
+from app.models.attendance import AttendanceRecord, AttendanceSession
+from app.models.examination import ExamMarks, ExamSubject, Examination, ExamResult
+from app.modules.students.schemas import (
+    StudentCreate, StudentUpdate, StudentListResponse, StudentProfileResponse,
+    GuardianCreate, GuardianResponse
+)
+from app.modules.students.service import generate_student_code_and_prn
+
+router = APIRouter(prefix="/students", tags=["Students"])
+
+
+@router.get("", response_model=List[StudentListResponse])
+async def list_students(
+    response: Response,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    search: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    gender_filter: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Student)
+    count_stmt = select(func.count(Student.id))
+
+    if search:
+        term = f"%{search}%"
+        search_filter = or_(
+            Student.first_name.ilike(term),
+            Student.last_name.ilike(term),
+            Student.student_code.ilike(term),
+            Student.prn.ilike(term),
+            Student.email.ilike(term),
+            Student.mobile.ilike(term)
+        )
+        stmt = stmt.where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
+
+    if status_filter:
+        stmt = stmt.where(Student.status == status_filter)
+        count_stmt = count_stmt.where(Student.status == status_filter)
+
+    if gender_filter:
+        stmt = stmt.where(Student.gender == gender_filter)
+        count_stmt = count_stmt.where(Student.gender == gender_filter)
+
+    total_count = (await db.execute(count_stmt)).scalar() or 0
+    response.headers["X-Total-Count"] = str(total_count)
+
+    stmt = stmt.offset(skip).limit(limit).order_by(Student.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.post("", response_model=StudentListResponse, status_code=status.HTTP_201_CREATED)
+async def create_student(
+    data: StudentCreate,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    # Generate collision-free sequential student code and PRN
+    generated_code, generated_prn = await generate_student_code_and_prn(db, year=2026)
+    student_code = generated_code
+    prn_number = data.prn or generated_prn
+
+    student = Student(
+        institute_id=current_user.institute_id,
+        student_code=student_code,
+        prn=prn_number,
+        first_name=data.first_name,
+        middle_name=data.middle_name,
+        last_name=data.last_name,
+        date_of_birth=data.date_of_birth,
+        gender=data.gender,
+        blood_group=data.blood_group,
+        mobile=data.mobile,
+        email=data.email,
+        village=data.village or data.city,
+        taluka=data.taluka,
+        district=data.district or data.city or "Kolhapur",
+        address_line1=data.address_line1,
+        address_line2=data.address_line2,
+        city=data.city,
+        state=data.state,
+        pincode=data.pincode,
+        institution_type=data.institution_type or "SCHOOL",
+        school_college_name=data.school_college_name,
+        education_board=data.education_board,
+        previous_percentage=data.previous_percentage,
+        aadhar_number=data.aadhar_number,
+        category=data.category or "GENERAL",
+        admission_date=data.admission_date or date.today(),
+        emergency_contact_name=data.emergency_contact_name,
+        emergency_contact_phone=data.emergency_contact_phone,
+        emergency_contact_relation=data.emergency_contact_relation,
+        status="ACTIVE"
+    )
+    db.add(student)
+    await db.flush()
+
+    if data.guardians:
+        for g_data in data.guardians:
+            guardian = Guardian(
+                institute_id=current_user.institute_id,
+                first_name=g_data.first_name,
+                last_name=g_data.last_name,
+                relation=g_data.relation,
+                mobile=g_data.mobile,
+                email=g_data.email,
+                occupation=g_data.occupation,
+                address=g_data.address
+            )
+            db.add(guardian)
+            await db.flush()
+
+            sg = StudentGuardian(
+                student_id=student.id,
+                guardian_id=guardian.id,
+                is_primary=g_data.is_primary,
+                can_pickup=True,
+                receives_notifications=True
+            )
+            db.add(sg)
+
+    await db.commit()
+    await db.refresh(student)
+    await cache_service.delete(CacheKeys.student_profile(student.id))
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+    return student
+
+
+@router.get("/{student_id}/profile", response_model=StudentProfileResponse)
+async def get_student_profile(
+    student_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns complete multi-tab student profile across all modules.
+    Cached for 300 seconds with active write-invalidation.
+    """
+    cache_key = CacheKeys.student_profile(student_id)
+    cached = await cache_service.get(cache_key)
+    if cached is not None:
+        return cached
+
+    student = await db.get(Student, student_id)
+    if not student:
+        raise NotFoundException("Student not found")
+
+    # 1. Overview Tab
+    guardians_stmt = select(StudentGuardian).options(selectinload(StudentGuardian.guardian)).where(StudentGuardian.student_id == student_id)
+    guardians_res = (await db.execute(guardians_stmt)).scalars().all()
+    guardians_list = [
+        {
+            "id": str(sg.guardian.id),
+            "name": f"{sg.guardian.first_name} {sg.guardian.last_name}",
+            "relation": sg.guardian.relation,
+            "mobile": sg.guardian.mobile,
+            "is_primary": sg.is_primary
+        } for sg in guardians_res
+    ]
+
+    # Query active batch and roll number (prioritizing core standard classroom batch over elective skill courses)
+    batch_stmt = (
+        select(BatchStudent)
+        .options(selectinload(BatchStudent.batch).selectinload(Batch.course))
+        .where(BatchStudent.student_id == student_id, BatchStudent.status == "ACTIVE")
+        .order_by(BatchStudent.created_at.desc())
+    )
+    batch_students = (await db.execute(batch_stmt)).scalars().all()
+    core_bs = [bs for bs in batch_students if bs.batch and bs.batch.course and not bs.batch.course.is_universal]
+    active_bs = core_bs[0] if core_bs else (batch_students[0] if batch_students else None)
+
+    overview = {
+        "id": str(student.id),
+        "student_code": student.student_code,
+        "prn": student.prn or student.student_code.replace("STU-", "PRN-"),
+        "first_name": student.first_name,
+        "middle_name": student.middle_name,
+        "last_name": student.last_name,
+        "gender": student.gender,
+        "date_of_birth": student.date_of_birth.isoformat(),
+        "blood_group": student.blood_group,
+        "mobile": student.mobile,
+        "email": student.email,
+        "institution_type": student.institution_type or "SCHOOL",
+        "school_college_name": student.school_college_name,
+        "education_board": student.education_board,
+        "previous_percentage": float(student.previous_percentage) if student.previous_percentage is not None else None,
+        "aadhar_number": student.aadhar_number,
+        "category": student.category,
+        "village": student.village,
+        "taluka": student.taluka,
+        "district": student.district,
+        "address": (
+            f"{student.village or ''}, Tal. {student.taluka or ''}, Dist. {student.district or ''}".strip(', ')
+            if (student.village or student.taluka or student.district)
+            else f"{student.address_line1 or ''} {student.city or ''} {student.state or ''} {student.pincode or ''}".strip()
+        ),
+        "address_line1": student.address_line1,
+        "address_line2": student.address_line2,
+        "city": student.city,
+        "state": student.state,
+        "pincode": student.pincode,
+        "emergency_contact_name": student.emergency_contact_name,
+        "emergency_contact_phone": student.emergency_contact_phone,
+        "emergency_contact_relation": student.emergency_contact_relation,
+        "admission_date": student.admission_date.isoformat(),
+        "status": student.status,
+        "trial_end_date": student.trial_end_date.isoformat() if student.trial_end_date else None,
+        "trial_form_fee_paid": student.trial_form_fee_paid,
+        "trial_receipt_number": student.trial_receipt_number,
+        "batch_id": str(active_bs.batch.id) if active_bs and active_bs.batch else None,
+        "batch_name": active_bs.batch.name if active_bs and active_bs.batch else None,
+        "division": active_bs.batch.division if active_bs and active_bs.batch else None,
+        "roll_number": active_bs.roll_number if active_bs else None,
+        "batch_start_date": active_bs.batch.start_date.isoformat() if active_bs and active_bs.batch and active_bs.batch.start_date else None,
+        "batch_end_date": active_bs.batch.end_date.isoformat() if active_bs and active_bs.batch and active_bs.batch.end_date else None,
+        "batch_is_active": active_bs.batch.is_active if active_bs and active_bs.batch else True,
+        "guardians": guardians_list
+    }
+
+    # 2. Academics & Enrollments Tab
+    enrollments_stmt = (
+        select(Enrollment)
+        .options(
+            selectinload(Enrollment.academic_year),
+            selectinload(Enrollment.academic_class),
+            selectinload(Enrollment.stream),
+            selectinload(Enrollment.batch),
+            selectinload(Enrollment.course).selectinload(Course.versions).selectinload(CourseVersion.version_subjects).selectinload(CourseVersionSubject.subject),
+            selectinload(Enrollment.enrollment_group),
+            selectinload(Enrollment.enrolled_subjects).selectinload(EnrollmentSubject.subject)
+        )
+        .where(Enrollment.student_id == student_id)
+        .order_by(Enrollment.created_at.desc())
+    )
+    enrollments_res = (await db.execute(enrollments_stmt)).scalars().all()
+    academics = []
+    for enr in enrollments_res:
+        subjs = [{"id": str(es.subject.id), "name": es.subject.name, "code": es.subject.code} for es in enr.enrolled_subjects]
+        if not subjs and enr.course and enr.course.versions:
+            active_v = next((v for v in enr.course.versions if v.is_active), enr.course.versions[-1])
+            if active_v and active_v.version_subjects:
+                subjs = [{"id": str(vs.subject.id), "name": vs.subject.name, "code": vs.subject.code} for vs in active_v.version_subjects if vs.subject]
+
+        academics.append({
+            "enrollment_id": str(enr.id),
+            "enrollment_group_id": str(enr.enrollment_group_id) if enr.enrollment_group_id else None,
+            "enrollment_type": enr.enrollment_group.enrollment_type if enr.enrollment_group else "SINGLE_YEAR",
+            "group_remarks": enr.enrollment_group.remarks if enr.enrollment_group else None,
+            "academic_year": enr.academic_year.name if enr.academic_year else None,
+            "start_date": enr.academic_year.start_date.isoformat() if enr.academic_year and enr.academic_year.start_date else None,
+            "end_date": enr.academic_year.end_date.isoformat() if enr.academic_year and enr.academic_year.end_date else None,
+            "enrollment_date": enr.enrollment_date.isoformat() if enr.enrollment_date else None,
+            "class_name": enr.academic_class.name if enr.academic_class else None,
+            "stream_name": enr.stream.name if enr.stream else None,
+            "course_name": enr.course.name if enr.course else None,
+            "course_code": enr.course.code if enr.course else None,
+            "batch_name": enr.batch.name if enr.batch else None,
+            "batch_code": enr.batch.code if enr.batch else None,
+            "division": enr.batch.division if enr.batch else None,
+            "is_universal": enr.course.is_universal if enr.course else False,
+            "status": enr.status,
+            "promotion_status": enr.promotion_status,
+            "subjects": subjs
+        })
+
+    # Prioritize core academic curriculum courses over elective / universal skill courses
+    academics.sort(key=lambda x: (1 if x.get("is_universal") else 0))
+
+    # 3. Services Subscriptions Tab
+    services_stmt = (
+        select(StudentService)
+        .options(selectinload(StudentService.service_plan).selectinload(ServicePlan.service_type))
+        .where(StudentService.student_id == student_id)
+    )
+    services_res = (await db.execute(services_stmt)).scalars().all()
+    services_list = []
+    for s in services_res:
+        st_code = s.service_plan.service_type.code if (s.service_plan and s.service_plan.service_type) else None
+        if st_code == "TUITION":
+            continue
+        services_list.append({
+            "id": str(s.id),
+            "service_type": st_code,
+            "plan_name": s.service_plan.name if s.service_plan else None,
+            "billing_frequency": s.billing_frequency,
+            "unit_price": float(s.unit_price),
+            "start_date": s.start_date.isoformat(),
+            "end_date": s.end_date.isoformat(),
+            "status": s.status
+        })
+
+    # 4. Hostel Tab
+    hostel_stmt = (
+        select(BedAllocation)
+        .options(selectinload(BedAllocation.hostel_bed).selectinload(HostelBed.room))
+        .where(BedAllocation.student_id == student_id, BedAllocation.status == "ACTIVE")
+    )
+    active_bed = (await db.execute(hostel_stmt)).scalar_one_or_none()
+    hostel_data = None
+    if active_bed and active_bed.hostel_bed:
+        hostel_data = {
+            "bed_id": str(active_bed.hostel_bed.id),
+            "bed_number": active_bed.hostel_bed.bed_number,
+            "room_number": active_bed.hostel_bed.room.room_number if active_bed.hostel_bed.room else None,
+            "start_date": active_bed.start_date.isoformat(),
+            "end_date": active_bed.end_date.isoformat(),
+            "status": active_bed.status
+        }
+
+    # 5. Study Room Tab
+    seat_stmt = (
+        select(SeatAllocation)
+        .options(selectinload(SeatAllocation.study_seat))
+        .where(SeatAllocation.student_id == student_id, SeatAllocation.status == "ACTIVE")
+    )
+    active_seat = (await db.execute(seat_stmt)).scalar_one_or_none()
+    study_room_data = None
+    if active_seat and active_seat.study_seat:
+        study_room_data = {
+            "seat_id": str(active_seat.study_seat.id),
+            "seat_number": active_seat.study_seat.seat_number,
+            "gender_allowed": active_seat.study_seat.gender_allowed,
+            "has_power_outlet": active_seat.study_seat.has_power_outlet,
+            "start_date": active_seat.start_date.isoformat(),
+            "end_date": active_seat.end_date.isoformat(),
+            "status": active_seat.status
+        }
+
+    # 6. Fees / Invoices Tab
+    inv_stmt = (
+        select(Invoice)
+        .options(
+            selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments),
+            selectinload(Invoice.items)
+        )
+        .where(Invoice.student_id == student_id)
+        .order_by(Invoice.created_at.desc())
+    )
+    invoices_res = (await db.execute(inv_stmt)).scalars().all()
+    fees_list = [
+        {
+            "id": str(inv.id),
+            "invoice_number": inv.invoice_number,
+            "issue_date": inv.issue_date.isoformat(),
+            "due_date": inv.due_date.isoformat(),
+            "total_amount": float(inv.total_amount),
+            "paid_amount": float(inv.paid_amount),
+            "balance_amount": float(inv.balance_amount),
+            "status": inv.status,
+            "items": [
+                {
+                    "description": it.description,
+                    "amount": float(it.total_amount)
+                } for it in (inv.items or [])
+            ],
+            "installments": [
+                {
+                    "id": str(inst.id),
+                    "installment_number": inst.installment_number,
+                    "due_date": inst.due_date.isoformat(),
+                    "amount": float(inst.amount),
+                    "paid_amount": float(inst.paid_amount),
+                    "status": inst.status
+                } for inst in (sorted(inv.installment_plan.installments, key=lambda x: x.installment_number) if inv.installment_plan and inv.installment_plan.installments else [])
+            ]
+        } for inv in invoices_res
+    ]
+
+    # 7. Payments Tab
+    pay_stmt = select(Payment).where(Payment.student_id == student_id).order_by(Payment.created_at.desc())
+    payments_res = (await db.execute(pay_stmt)).scalars().all()
+    payments_list = [
+        {
+            "id": str(p.id),
+            "payment_number": p.payment_number,
+            "amount": float(p.amount),
+            "payment_method": p.payment_method,
+            "payment_date": p.payment_date.isoformat(),
+            "status": p.status
+        } for p in payments_res
+    ]
+
+    # 8. Attendance Tab
+    att_stmt = (
+        select(AttendanceRecord)
+        .outerjoin(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id)
+        .options(
+            selectinload(AttendanceRecord.session)
+            .selectinload(AttendanceSession.batch_subject)
+            .selectinload(BatchSubject.subject),
+            selectinload(AttendanceRecord.session)
+            .selectinload(AttendanceSession.batch_subject)
+            .selectinload(BatchSubject.batch),
+            selectinload(AttendanceRecord.session)
+            .selectinload(AttendanceSession.teacher)
+        )
+        .where(AttendanceRecord.student_id == student_id)
+        .order_by(AttendanceSession.session_date.desc().nulls_last(), AttendanceRecord.marked_at.desc())
+    )
+    att_records = (await db.execute(att_stmt)).scalars().all()
+    total_sessions = len(att_records)
+    present_count = sum(1 for r in att_records if r.status == "PRESENT")
+    absent_count = sum(1 for r in att_records if r.status == "ABSENT")
+    late_count = sum(1 for r in att_records if r.status == "LATE")
+    excused_count = sum(1 for r in att_records if r.status == "EXCUSED_LEAVE")
+    attended_count = present_count + late_count
+    att_percent = round((attended_count / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+
+    subject_stats = {}
+    records_list = []
+    for r in att_records:
+        sess = r.session
+        bs = sess.batch_subject if sess else None
+        subj_name = bs.subject.name if bs and bs.subject else "General Lecture"
+        subj_code = bs.subject.code if bs and bs.subject else ""
+        batch_name = bs.batch.name if bs and bs.batch else ""
+        topic = sess.topic_covered if sess else ""
+        sess_date = sess.session_date.isoformat() if sess and sess.session_date else r.marked_at.date().isoformat()
+        t_name = f"{sess.teacher.first_name} {sess.teacher.last_name}" if sess and sess.teacher else None
+
+        if subj_name not in subject_stats:
+            subject_stats[subj_name] = {"subject_name": subj_name, "total": 0, "present": 0, "absent": 0, "late": 0}
+        subject_stats[subj_name]["total"] += 1
+        if r.status in ("PRESENT", "LATE"):
+            subject_stats[subj_name]["present"] += 1
+        if r.status == "ABSENT":
+            subject_stats[subj_name]["absent"] += 1
+        if r.status == "LATE":
+            subject_stats[subj_name]["late"] += 1
+
+        records_list.append({
+            "id": str(r.id),
+            "session_id": str(sess.id) if sess else None,
+            "date": sess_date,
+            "start_time": sess.start_time.isoformat() if sess and sess.start_time else None,
+            "end_time": sess.end_time.isoformat() if sess and sess.end_time else None,
+            "subject_name": subj_name,
+            "subject_code": subj_code,
+            "batch_name": batch_name,
+            "topic_covered": topic or "Regular Lecture",
+            "status": r.status,
+            "remarks": r.remarks,
+            "teacher_name": t_name,
+            "marked_at": r.marked_at.isoformat() if r.marked_at else None
+        })
+
+    subject_breakdown = []
+    for s_name, s_data in subject_stats.items():
+        s_pct = round((s_data["present"] / s_data["total"] * 100), 1) if s_data["total"] > 0 else 100.0
+        subject_breakdown.append({
+            "subject_name": s_name,
+            "total_sessions": s_data["total"],
+            "present_sessions": s_data["present"],
+            "absent_sessions": s_data["absent"],
+            "late_sessions": s_data["late"],
+            "percentage": s_pct
+        })
+    subject_breakdown.sort(key=lambda x: x["subject_name"])
+
+    attendance_data = {
+        "total_sessions": total_sessions,
+        "present_sessions": present_count,
+        "attended_sessions": attended_count,
+        "absent_sessions": absent_count,
+        "late_sessions": late_count,
+        "excused_sessions": excused_count,
+        "attendance_percentage": att_percent,
+        "subject_breakdown": subject_breakdown,
+        "records": records_list
+    }
+
+    # 9. Examinations Tab
+    marks_stmt = (
+        select(ExamMarks)
+        .options(
+            selectinload(ExamMarks.exam_subject).selectinload(ExamSubject.examination),
+            selectinload(ExamMarks.exam_subject).selectinload(ExamSubject.subject),
+            selectinload(ExamMarks.exam_subject).selectinload(ExamSubject.academic_class),
+            selectinload(ExamMarks.exam_subject).selectinload(ExamSubject.course)
+        )
+        .where(ExamMarks.student_id == student_id)
+        .order_by(ExamMarks.created_at.desc())
+    )
+    marks_res = (await db.execute(marks_stmt)).scalars().all()
+
+    result_stmt = (
+        select(ExamResult)
+        .options(selectinload(ExamResult.examination))
+        .where(ExamResult.student_id == student_id)
+    )
+    exam_results_res = (await db.execute(result_stmt)).scalars().all()
+    exam_results_map = {r.examination_id: r for r in exam_results_res}
+
+    exams_list = []
+    seen_exam_ids = set()
+    for m in marks_res:
+        es = m.exam_subject
+        exam = es.examination if es else None
+        subj = es.subject if es else None
+        cls = es.academic_class if es else None
+        crs = es.course if es else None
+        er = exam_results_map.get(exam.id) if exam else None
+        if exam:
+            seen_exam_ids.add(exam.id)
+
+        max_m = float(es.max_marks) if es and es.max_marks else 100.0
+        pass_m = float(es.passing_marks) if es and es.passing_marks else 35.0
+        obt_m = float(m.total_marks_obtained)
+        pct = round((obt_m / max_m * 100), 1) if max_m > 0 and not m.is_absent else 0.0
+        is_pass = obt_m >= pass_m and not m.is_absent
+        grade = (
+            er.grade if er and er.grade
+            else ("A+" if pct >= 90 else ("A" if pct >= 80 else ("B+" if pct >= 70 else ("B" if pct >= 60 else ("C" if pct >= 50 else ("D" if pct >= 35 else "F"))))))
+        )
+
+        exams_list.append({
+            "id": str(m.id),
+            "examination_id": str(exam.id) if exam else None,
+            "exam_name": exam.name if exam else "Assessment Test",
+            "exam_code": exam.code if exam else "",
+            "exam_date": es.exam_date.isoformat() if es and es.exam_date else (exam.start_date.isoformat() if exam and exam.start_date else None),
+            "is_published": exam.is_published if exam else False,
+            "subject_name": subj.name if subj else "General",
+            "subject_code": subj.code if subj else "",
+            "class_name": cls.name if cls else None,
+            "course_name": crs.name if crs else None,
+            "max_marks": max_m,
+            "passing_marks": pass_m,
+            "marks_obtained": obt_m,
+            "percentage": pct,
+            "is_pass": is_pass,
+            "is_absent": m.is_absent,
+            "is_withheld": m.is_withheld,
+            "status": m.status,
+            "grade": grade,
+            "rank": er.rank if er else None
+        })
+
+    # Add any published overall results not covered by subject marks
+    for r in exam_results_res:
+        if r.examination_id not in seen_exam_ids:
+            exam = r.examination
+            pct = float(r.percentage)
+            exams_list.append({
+                "id": str(r.id),
+                "examination_id": str(exam.id) if exam else None,
+                "exam_name": exam.name if exam else "Published Examination",
+                "exam_code": exam.code if exam else "",
+                "exam_date": exam.start_date.isoformat() if exam and exam.start_date else None,
+                "is_published": True,
+                "subject_name": "Overall Assessment",
+                "subject_code": "ALL",
+                "class_name": None,
+                "course_name": None,
+                "max_marks": float(r.total_possible),
+                "passing_marks": float(r.total_possible * 0.35),
+                "marks_obtained": float(r.total_obtained),
+                "percentage": pct,
+                "is_pass": r.is_pass,
+                "is_absent": False,
+                "is_withheld": False,
+                "status": "PUBLISHED",
+                "grade": r.grade,
+                "rank": r.rank
+            })
+
+    # 10. Documents Tab
+    doc_stmt = select(StudentDocument).where(StudentDocument.student_id == student_id)
+    docs_res = (await db.execute(doc_stmt)).scalars().all()
+    docs_list = [
+        {
+            "id": str(d.id),
+            "document_type": d.document_type,
+            "file_name": d.file_name,
+            "file_url": d.file_url,
+            "is_verified": d.is_verified
+        } for d in docs_res
+    ]
+
+    # 11. Activity History Tab
+    activity_history = [
+        {
+            "timestamp": student.created_at.isoformat(),
+            "action": "STUDENT_ADMISSION_REGISTERED",
+            "description": f"Student registered with code {student.student_code}"
+        }
+    ]
+
+    profile_response = StudentProfileResponse(
+        overview=overview,
+        academics=academics,
+        services=services_list,
+        hostel=hostel_data,
+        study_room=study_room_data,
+        fees=fees_list,
+        payments=payments_list,
+        attendance=attendance_data,
+        examinations=exams_list,
+        documents=docs_list,
+        activity_history=activity_history
+    )
+    await cache_service.set(cache_key, profile_response.model_dump(), ttl=300)
+    return profile_response
+
+
+@router.patch("/{student_id}", response_model=StudentListResponse)
+async def update_student(
+    student_id: uuid.UUID,
+    data: StudentUpdate,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    student = await db.get(Student, student_id)
+    if not student:
+        raise NotFoundException(f"Student with ID {student_id} not found.")
+
+    update_dict = data.model_dump(exclude_unset=True)
+    for field, val in update_dict.items():
+        if field == "gender" and isinstance(val, str):
+            setattr(student, field, val.upper())
+        elif field == "status" and isinstance(val, str):
+            setattr(student, field, val.upper())
+        else:
+            setattr(student, field, val)
+
+    await db.commit()
+    await db.refresh(student)
+    await cache_service.delete(CacheKeys.student_profile(student.id))
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+    return student
+
+
+@router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_student(
+    student_id: uuid.UUID,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    student = await db.get(Student, student_id)
+    if not student:
+        raise NotFoundException(f"Student with ID {student_id} not found.")
+
+    # 1. Free any allocated Study Seats
+    seat_alloc_stmt = select(SeatAllocation).where(
+        SeatAllocation.student_id == student_id,
+        SeatAllocation.status == "ACTIVE"
+    )
+    seat_allocs = (await db.execute(seat_alloc_stmt)).scalars().all()
+    for sa in seat_allocs:
+        sa.status = "CANCELLED"
+        seat = await db.get(StudySeat, sa.study_seat_id)
+        if seat and seat.status == "OCCUPIED":
+            seat.status = "AVAILABLE"
+
+    # 2. Free any allocated Hostel Beds
+    bed_alloc_stmt = select(BedAllocation).where(
+        BedAllocation.student_id == student_id,
+        BedAllocation.status == "ACTIVE"
+    )
+    bed_allocs = (await db.execute(bed_alloc_stmt)).scalars().all()
+    for ba in bed_allocs:
+        ba.status = "CANCELLED"
+        bed = await db.get(HostelBed, ba.hostel_bed_id)
+        if bed and bed.status == "OCCUPIED":
+            bed.status = "AVAILABLE"
+
+    # 3. Clean up facility allocations, payments, allocations, receipts, invoices
+    await db.execute(delete(SeatAllocation).where(SeatAllocation.student_id == student_id))
+    await db.execute(delete(BedAllocation).where(BedAllocation.student_id == student_id))
+
+    payments_stmt = select(Payment).where(Payment.student_id == student_id)
+    payments = (await db.execute(payments_stmt)).scalars().all()
+    for p in payments:
+        await db.execute(delete(Receipt).where(Receipt.payment_id == p.id))
+        await db.execute(delete(PaymentAllocation).where(PaymentAllocation.payment_id == p.id))
+        await db.delete(p)
+
+    invoices_stmt = select(Invoice).where(Invoice.student_id == student_id)
+    invoices = (await db.execute(invoices_stmt)).scalars().all()
+    for inv in invoices:
+        await db.execute(delete(PaymentAllocation).where(PaymentAllocation.invoice_id == inv.id))
+        inst_plan = (await db.execute(select(InstallmentPlan).where(InstallmentPlan.invoice_id == inv.id))).scalar_one_or_none()
+        if inst_plan:
+            await db.execute(delete(Installment).where(Installment.installment_plan_id == inst_plan.id))
+            await db.delete(inst_plan)
+        await db.execute(delete(InvoiceItem).where(InvoiceItem.invoice_id == inv.id))
+        await db.delete(inv)
+
+    # 4. Delete student (all CASCADE relations will delete automatically)
+    await db.delete(student)
+    await db.commit()
+    await cache_service.delete(CacheKeys.student_profile(student_id))
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+    await cache_service.delete_pattern(CacheKeys.study_room_pattern())
+    await cache_service.delete_pattern(CacheKeys.hostel_pattern())
+    return None
