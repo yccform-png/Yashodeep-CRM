@@ -37,11 +37,24 @@ class MetaWhatsAppClient:
     Seamlessly falls back to Mock Sandbox Mode when credentials are not configured in .env.
     """
 
+    @property
+    def api_version(self) -> str:
+        return settings.META_WHATSAPP_API_VERSION or "v21.0"
+
+    @property
+    def phone_number_id(self) -> Optional[str]:
+        return settings.META_WHATSAPP_PHONE_NUMBER_ID
+
+    @property
+    def access_token(self) -> Optional[str]:
+        return settings.META_WHATSAPP_ACCESS_TOKEN
+
+    @property
+    def enabled(self) -> bool:
+        return bool(settings.META_WHATSAPP_ENABLED and self.access_token and self.phone_number_id)
+
     def __init__(self):
-        self.api_version = settings.META_WHATSAPP_API_VERSION or "v21.0"
-        self.phone_number_id = settings.META_WHATSAPP_PHONE_NUMBER_ID
-        self.access_token = settings.META_WHATSAPP_ACCESS_TOKEN
-        self.enabled = bool(settings.META_WHATSAPP_ENABLED and self.access_token and self.phone_number_id)
+        pass
 
     @property
     def base_url(self) -> str:

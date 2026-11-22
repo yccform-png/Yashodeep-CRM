@@ -14,11 +14,23 @@ class BrevoEmailClient:
     Falls back to Mock Sandbox Mode when credentials are not configured in .env.
     """
 
+    @property
+    def api_key(self) -> Optional[str]:
+        return settings.BREVO_API_KEY
+
+    @property
+    def sender_name(self) -> str:
+        return settings.BREVO_SENDER_NAME or "Yashodeep Coaching Classes"
+
+    @property
+    def sender_email(self) -> str:
+        return settings.BREVO_SENDER_EMAIL or "admissions@yashodeepcoachingclasses.in"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(settings.BREVO_EMAIL_ENABLED and self.api_key)
+
     def __init__(self):
-        self.api_key = settings.BREVO_API_KEY
-        self.sender_name = settings.BREVO_SENDER_NAME or "Yashodeep Coaching Classes"
-        self.sender_email = settings.BREVO_SENDER_EMAIL or "admissions@yashodeepcoachingclasses.in"
-        self.enabled = bool(settings.BREVO_EMAIL_ENABLED and self.api_key)
         self.endpoint = "https://api.brevo.com/v3/smtp/email"
 
     async def send_transactional_email(
