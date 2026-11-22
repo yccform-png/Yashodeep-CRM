@@ -825,120 +825,127 @@ export const HostelManagement: React.FC = () => {
 
       {currentHostel && (
         <div className="space-y-4">
-          {/* Level 2: Building / Block Selector Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center space-x-2 overflow-x-auto w-full md:w-auto">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2 flex items-center space-x-1">
-                <Building className="w-3.5 h-3.5" />
-                <span>Blocks:</span>
-              </span>
-              {currentHostel.buildings.map((bld) => {
-                const bldBeds = bld.floors.flatMap((f) => f.rooms).flatMap((r) => r.beds);
-                const bldOccupied = bldBeds.filter((b) => b.status === 'OCCUPIED').length;
-                const isSelected = selectedBuildingId === bld.id;
-
-                return (
-                  <button
-                    key={bld.id}
-                    onClick={() => handleSelectBuilding(bld.id)}
-                    className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      isSelected
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{bld.name}</span>
-                    <span className="text-[10px] font-mono text-slate-400 font-normal">({bld.code})</span>
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        bldBeds.length > 0 && bldOccupied === bldBeds.length
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-emerald-100 text-emerald-700'
-                      }`}
-                    >
-                      {bldOccupied}/{bldBeds.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {isAdmin && currentBuilding && (
-              <button
-                type="button"
-                onClick={() => openAddFloorModal(currentBuilding.id, currentBuilding.floors.length + 1)}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1.5 transition self-end md:self-auto"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Floor to {currentBuilding.name}</span>
-              </button>
-            )}
-          </div>
-
-          {/* Level 3: Floor Switcher Tabs */}
-          {currentBuilding && (
-            <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-              <div className="flex items-center space-x-2 overflow-x-auto w-full md:w-auto">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2 flex items-center space-x-1">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Floors:</span>
+          {/* Level 2 & 3: Architectural Block & Floor Navigation Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100 p-3 sm:p-4 space-y-2.5 sm:space-y-3">
+            {/* Row 1: Building / Block Selector */}
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex items-center space-x-2 overflow-x-auto min-w-0 flex-1 scrollbar-none py-0.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 shrink-0 flex items-center space-x-1">
+                  <Building className="w-3.5 h-3.5" />
+                  <span>Blocks:</span>
                 </span>
-                {currentBuilding.floors.map((flr) => {
-                  const isSelected = selectedFloorId === flr.id;
-                  const flrBeds = flr.rooms.flatMap((r) => r.beds);
-                  const flrOccupied = flrBeds.filter((b) => b.status === 'OCCUPIED').length;
+                {currentHostel.buildings.map((bld) => {
+                  const bldBeds = bld.floors.flatMap((f) => f.rooms).flatMap((r) => r.beds);
+                  const bldOccupied = bldBeds.filter((b) => b.status === 'OCCUPIED').length;
+                  const isSelected = selectedBuildingId === bld.id;
 
                   return (
                     <button
-                      key={flr.id}
-                      onClick={() => handleSelectFloor(flr.id)}
-                      className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                      key={bld.id}
+                      onClick={() => handleSelectBuilding(bld.id)}
+                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border whitespace-nowrap shrink-0 ${
                         isSelected
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
-                      <span>
-                        Floor {flr.floor_number} • {flr.name}
-                      </span>
+                      <span>{bld.name}</span>
+                      <span className="text-[10px] font-mono text-slate-400 font-normal">({bld.code})</span>
                       <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isSelected ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                          bldBeds.length > 0 && bldOccupied === bldBeds.length
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-emerald-100 text-emerald-700'
                         }`}
                       >
-                        {flr.rooms.length} R • {flrOccupied}/{flrBeds.length} B
+                        {bldOccupied}/{bldBeds.length}
                       </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Current Floor Action & Empty Floor Deletion */}
-              {currentFloor && isAdmin && (
-                <div className="flex items-center space-x-2 self-end md:self-auto">
-                  <button
-                    type="button"
-                    onClick={() => openAddRoomModal(currentFloor.id, currentFloor.floor_number)}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1 transition"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Room to Floor {currentFloor.floor_number}</span>
-                  </button>
-
-                  {currentFloor.rooms.every((r) => r.beds.every((b) => b.status !== 'OCCUPIED')) && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteFloor(currentFloor.id, currentFloor.name)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition border border-slate-200"
-                      title="Delete Empty Floor"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+              {isAdmin && currentBuilding && (
+                <button
+                  type="button"
+                  onClick={() => openAddFloorModal(currentBuilding.id, currentBuilding.floors.length + 1)}
+                  className="px-2.5 sm:px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1 shrink-0 transition"
+                  title={`Add Floor to ${currentBuilding.name}`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Add Floor to {currentBuilding.name}</span>
+                  <span className="sm:hidden">Add Floor</span>
+                </button>
               )}
             </div>
-          )}
+
+            {/* Row 2: Floor Switcher Tabs */}
+            {currentBuilding && (
+              <div className="flex items-center justify-between gap-2.5 pt-2.5 sm:pt-3">
+                <div className="flex items-center space-x-2 overflow-x-auto min-w-0 flex-1 scrollbar-none py-0.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 shrink-0 flex items-center space-x-1">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Floors:</span>
+                  </span>
+                  {currentBuilding.floors.map((flr) => {
+                    const isSelected = selectedFloorId === flr.id;
+                    const flrBeds = flr.rooms.flatMap((r) => r.beds);
+                    const flrOccupied = flrBeds.filter((b) => b.status === 'OCCUPIED').length;
+
+                    return (
+                      <button
+                        key={flr.id}
+                        onClick={() => handleSelectFloor(flr.id)}
+                        className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                          isSelected
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <span>
+                          Floor {flr.floor_number} • {flr.name}
+                        </span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            isSelected ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {flr.rooms.length} R • {flrOccupied}/{flrBeds.length} B
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Current Floor Action & Empty Floor Deletion */}
+                {currentFloor && isAdmin && (
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openAddRoomModal(currentFloor.id, currentFloor.floor_number)}
+                      className="px-2.5 sm:px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1 transition"
+                      title={`Add Room to Floor ${currentFloor.floor_number}`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Add Room to Floor {currentFloor.floor_number}</span>
+                      <span className="sm:hidden">Add Room</span>
+                    </button>
+
+                    {currentFloor.rooms.every((r) => r.beds.every((b) => b.status !== 'OCCUPIED')) && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFloor(currentFloor.id, currentFloor.name)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition border border-slate-200"
+                        title="Delete Empty Floor"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Main Visual Layout: Left 2D Floor Plan Grid + Right Interactive Inspector */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
