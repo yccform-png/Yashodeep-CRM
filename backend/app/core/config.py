@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     SECRET_KEY: str = "super-secret-institute-jwt-key-change-in-production-min-32-chars-long!"
+    CRON_SECRET: str = "ycc-crm-cron-secret-2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7

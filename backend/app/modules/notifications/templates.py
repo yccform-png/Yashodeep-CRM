@@ -208,6 +208,54 @@ def format_fee_reminder_whatsapp(
     }
 
 
+def format_fee_reminder_email(
+    parent_name: str,
+    student_name: str,
+    installment_number: int,
+    amount: float,
+    due_date: str,
+    invoice_number: str,
+    course_name: str = "Enrolled Academic Course",
+    is_overdue: bool = False
+) -> Dict[str, str]:
+    badge_label = "OVERDUE" if is_overdue else "UPCOMING DUE"
+    badge_class = "badge-rose" if is_overdue else "badge-amber"
+    border_color = "#e11d48" if is_overdue else "#f59e0b"
+    title_text = "Important: Fee Installment Overdue" if is_overdue else "Fee Installment Due Reminder"
+    subject = f"{'⚠️ Fee Overdue Notice' if is_overdue else '📅 Fee Installment Due Reminder'} - Inst #{installment_number} of ₹{amount:,.2f} ({student_name})"
+
+    body = f"""
+    <p>Dear <strong>{parent_name or 'Parent / Guardian'}</strong>,</p>
+    <p>This is a {'formal notice regarding an overdue installment' if is_overdue else 'courtesy reminder regarding an upcoming installment payment'} for <strong>{student_name}</strong>.</p>
+    
+    <div class="card" style="border-left: 4px solid {border_color};">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 14px; font-weight: 800; color: {'#be123c' if is_overdue else '#b45309'};">{title_text}</span>
+        <span class="badge {badge_class}">{badge_label}</span>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr><td style="padding: 4px 0; color: #64748b;">Student:</td><td style="font-weight: bold;">{student_name}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Course / Program:</td><td>{course_name}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Invoice Reference:</td><td style="font-weight: bold; font-family: monospace;">{invoice_number}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Installment:</td><td style="font-weight: bold;">Installment #{installment_number}</td></tr>
+        <tr><td style="padding: 4px 0; color: #64748b;">Scheduled Due Date:</td><td style="font-weight: bold; color: {'#e11d48' if is_overdue else '#0f172a'};">{due_date}</td></tr>
+        <tr style="border-top: 1px dashed #cbd5e1;"><td style="padding: 8px 0; font-weight: bold; color: #0f172a;">Amount Payable:</td><td style="font-weight: 800; font-size: 16px; color: {'#e11d48' if is_overdue else '#047857'};">₹{amount:,.2f}</td></tr>
+      </table>
+    </div>
+
+    <p style="font-size: 13px; color: #475569; margin-top: 16px;">
+      Please clear the scheduled dues on or before <strong>{due_date}</strong> to ensure uninterrupted classes and access to academic services.
+    </p>
+    <p style="font-size: 12px; color: #64748b;">
+      For online payment options or account queries, please visit the institute administration desk or reply to this email.
+    </p>
+    """
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
+    }
+
+
 # -----------------------------------------------------------------------------
 # 4. EXAM RESULT PUBLISHED
 # -----------------------------------------------------------------------------

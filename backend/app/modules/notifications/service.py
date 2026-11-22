@@ -6,8 +6,8 @@ across Meta WhatsApp and Brevo Transactional Email channels.
 import uuid
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
-from sqlalchemy import select
+from datetime import datetime, timezone, date, timedelta
+from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
 
 from app.core.database import AsyncSessionLocal
@@ -27,6 +27,7 @@ from app.modules.notifications.templates import (
     format_payment_receipt_whatsapp,
     format_payment_receipt_email,
     format_fee_reminder_whatsapp,
+    format_fee_reminder_email,
     format_exam_result_whatsapp,
     format_admission_welcome_whatsapp,
     wrap_html_email
@@ -390,6 +391,7 @@ class NotificationDispatcher:
                         selectinload(Invoice.student)
                         .selectinload(Student.guardians)
                         .selectinload(StudentGuardian.guardian),
+                        selectinload(Invoice.enrollment).selectinload(Enrollment.course),
                         selectinload(Invoice.installment_plan)
                         .selectinload(InstallmentPlan.installments)
                     )
@@ -403,6 +405,7 @@ class NotificationDispatcher:
                 stu = inv.student
                 student_name = f"{stu.first_name} {stu.last_name}".strip()
                 parent_name, parent_phone, parent_email = self._resolve_contact(stu)
+                course_name = inv.enrollment.course.name if (inv.enrollment and inv.enrollment.course) else "Academic Course"
 
                 # Target installment
                 target_inst = None
@@ -414,39 +417,169 @@ class NotificationDispatcher:
                     unpaid = [i for i in installments if i.status != "PAID"]
                     target_inst = unpaid[0] if unpaid else None
 
-                if not target_inst or not parent_phone:
+                if not target_inst:
                     return
 
-                wa_payload = format_fee_reminder_whatsapp(
-                    parent_name=parent_name,
-                    installment_number=target_inst.installment_number,
-                    amount=float(target_inst.amount),
-                    student_name=student_name,
-                    due_date=str(target_inst.due_date)
-                )
-                outbox = await self._log_outbox(
-                    db,
-                    event_type="FEE_DUE_REMINDER",
-                    recipient_target=parent_phone,
-                    channel="WHATSAPP",
-                    payload=wa_payload
-                )
-                try:
-                    await meta_whatsapp_client.send_template_message(
-                        to_phone=parent_phone,
-                        template_name=wa_payload["template_name"],
-                        components=wa_payload["components"]
+                is_overdue = target_inst.due_date < date.today()
+                due_date_str = str(target_inst.due_date)
+                unpaid_amount = float(target_inst.amount - (target_inst.paid_amount or 0))
+
+                # 1. Dispatch WhatsApp (to parent mobile)
+                if parent_phone:
+                    wa_payload = format_fee_reminder_whatsapp(
+                        parent_name=parent_name,
+                        installment_number=target_inst.installment_number,
+                        amount=unpaid_amount,
+                        student_name=student_name,
+                        due_date=due_date_str
                     )
-                    await self._update_outbox_result(db, outbox.id, "SENT")
+                    outbox = await self._log_outbox(
+                        db,
+                        event_type="FEE_DUE_REMINDER",
+                        recipient_target=parent_phone,
+                        channel="WHATSAPP",
+                        payload={**wa_payload, "installment_id": str(target_inst.id), "invoice_id": str(inv.id)}
+                    )
+                    try:
+                        await meta_whatsapp_client.send_template_message(
+                            to_phone=parent_phone,
+                            template_name=wa_payload["template_name"],
+                            components=wa_payload["components"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch fee reminder WhatsApp to {parent_phone}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+                # 2. Dispatch Email (to parent and student)
+                emails_to_send = []
+                if parent_email and "@" in parent_email:
+                    emails_to_send.append((parent_email, parent_name))
+                if stu.email and "@" in stu.email and (not parent_email or stu.email.lower() != parent_email.lower()):
+                    emails_to_send.append((stu.email, student_name))
+
+                for target_email, target_name in emails_to_send:
+                    email_data = format_fee_reminder_email(
+                        parent_name=target_name,
+                        student_name=student_name,
+                        installment_number=target_inst.installment_number,
+                        amount=unpaid_amount,
+                        due_date=due_date_str,
+                        invoice_number=inv.invoice_number,
+                        course_name=course_name,
+                        is_overdue=is_overdue
+                    )
+                    outbox = await self._log_outbox(
+                        db,
+                        event_type="FEE_DUE_REMINDER",
+                        recipient_target=target_email,
+                        channel="EMAIL",
+                        payload={"subject": email_data["subject"], "installment_id": str(target_inst.id), "invoice_id": str(inv.id)}
+                    )
+                    try:
+                        await brevo_email_client.send_transactional_email(
+                            to_email=target_email,
+                            to_name=target_name,
+                            subject=email_data["subject"],
+                            html_content=email_data["html_content"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch fee reminder Email to {target_email}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+            except Exception as e:
+                logger.error(f"Error in dispatch_fee_reminder: {e}", exc_info=True)
+
+    async def scan_and_dispatch_due_fee_reminders(
+        self,
+        days_ahead: int = 3,
+        include_overdue: bool = True,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Scans for unpaid installments approaching due date (due in <= days_ahead days)
+        or overdue, and dispatches WhatsApp & Email reminders.
+        Uses NotificationOutbox to ensure idempotency and prevent duplicate spamming.
+        """
+        async with AsyncSessionLocal() as db:
+            today = date.today()
+            upcoming_cutoff = today + timedelta(days=days_ahead)
+            start_of_today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            query = (
+                select(Installment)
+                .join(Installment.installment_plan)
+                .join(InstallmentPlan.invoice)
+                .options(
+                    selectinload(Installment.installment_plan).selectinload(InstallmentPlan.invoice)
+                )
+                .where(
+                    Installment.status.in_(["PENDING", "PARTIALLY_PAID", "OVERDUE"]),
+                    Installment.amount > Installment.paid_amount
+                )
+            )
+            res = await db.execute(query)
+            installments = res.scalars().all()
+
+            eligible = []
+            for inst in installments:
+                is_upcoming = today <= inst.due_date <= upcoming_cutoff
+                is_overdue = inst.due_date < today
+
+                if is_upcoming or (include_overdue and is_overdue):
+                    eligible.append((inst, "OVERDUE" if is_overdue else "UPCOMING"))
+
+            dispatched = []
+            skipped = []
+
+            for inst, reason in eligible:
+                inst_plan = inst.installment_plan
+                if not inst_plan or not inst_plan.invoice_id:
+                    continue
+
+                invoice_id = inst_plan.invoice_id
+                inst_id_str = str(inst.id)
+
+                if not force:
+                    # Check if already reminded today for this installment
+                    outbox_check = await db.execute(
+                        select(NotificationOutbox.id)
+                        .where(
+                            NotificationOutbox.event_type == "FEE_DUE_REMINDER",
+                            NotificationOutbox.created_at >= start_of_today,
+                            cast(NotificationOutbox.payload, String).like(f"%{inst_id_str}%")
+                        )
+                        .limit(1)
+                    )
+                    if outbox_check.scalars().first():
+                        skipped.append({
+                            "installment_id": inst_id_str,
+                            "installment_number": inst.installment_number,
+                            "reason": "already_reminded_today"
+                        })
+                        continue
+
+                try:
+                    await self.dispatch_fee_reminder(invoice_id=invoice_id, installment_id=inst.id)
+                    dispatched.append({
+                        "installment_id": inst_id_str,
+                        "installment_number": inst.installment_number,
+                        "due_date": str(inst.due_date),
+                        "amount": float(inst.amount - inst.paid_amount),
+                        "reason": reason
+                    })
                 except Exception as exc:
-                    logger.error(f"Failed to dispatch fee reminder to {parent_phone}: {exc}")
-                    await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+                    logger.error(f"Error dispatching reminder for installment {inst.id}: {exc}")
 
-            except Exception as e:
-                logger.error(f"Error in dispatch_fee_reminder: {e}", exc_info=True)
-
-            except Exception as e:
-                logger.error(f"Error in dispatch_fee_reminder: {e}", exc_info=True)
+            return {
+                "status": "success",
+                "total_candidates": len(eligible),
+                "reminders_dispatched": len(dispatched),
+                "skipped_count": len(skipped),
+                "dispatched": dispatched,
+                "skipped": skipped
+            }
 
     # -------------------------------------------------------------------------
     # 4. EXAM RESULT PUBLISHED

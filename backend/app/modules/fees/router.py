@@ -2,11 +2,12 @@ import uuid
 from typing import List, Optional
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, status, BackgroundTasks, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
@@ -833,3 +834,108 @@ async def restructure_invoice_plan(
     await cache_service.delete(CacheKeys.dashboard_metrics())
 
     return await get_detailed_invoice(inv.id, db)
+
+
+# =============================================================================
+# FEE REMINDERS (MANUAL & AUTOMATED CRON)
+# =============================================================================
+
+@router.post("/invoices/{invoice_id}/remind")
+async def send_invoice_fee_reminder(
+    invoice_id: uuid.UUID,
+    installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID to remind for"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers fee reminder dispatch to parent and student via WhatsApp & Email.
+    """
+    inv = await db.get(Invoice, invoice_id)
+    if not inv:
+        raise NotFoundException(f"Invoice {invoice_id} not found")
+
+    background_tasks.add_task(
+        notification_dispatcher.dispatch_fee_reminder,
+        invoice_id=invoice_id,
+        installment_id=installment_id
+    )
+    return {
+        "success": True,
+        "message": "Fee reminder dispatch scheduled successfully via WhatsApp and Email"
+    }
+
+
+@router.post("/installments/{installment_id}/remind")
+async def send_installment_fee_reminder(
+    installment_id: uuid.UUID,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually triggers fee reminder for a specific installment to parent and student via WhatsApp & Email.
+    """
+    inst = await db.get(Installment, installment_id)
+    if not inst:
+        raise NotFoundException(f"Installment {installment_id} not found")
+
+    plan = await db.get(InstallmentPlan, inst.installment_plan_id)
+    if not plan or not plan.invoice_id:
+        raise NotFoundException("Associated invoice not found for this installment")
+
+    background_tasks.add_task(
+        notification_dispatcher.dispatch_fee_reminder,
+        invoice_id=plan.invoice_id,
+        installment_id=installment_id
+    )
+    return {
+        "success": True,
+        "message": f"Fee reminder for Installment #{inst.installment_number} scheduled successfully"
+    }
+
+
+@router.api_route("/reminders/process-due", methods=["GET", "POST"])
+async def process_due_fee_reminders(
+    days_ahead: int = Query(3, description="Days before due date to trigger reminder (default 3)"),
+    include_overdue: bool = Query(True, description="Whether to include overdue unpaid installments"),
+    force: bool = Query(False, description="Force send even if already reminded today"),
+    cron_key: Optional[str] = Query(None, description="Secret cron key for automated schedulers"),
+    x_cron_key: Optional[str] = Header(None, alias="X-Cron-Key", description="Secret cron header for automated schedulers"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Automated background processor for fee installment due reminders.
+    Scans for upcoming (e.g. 3 days before due date) and overdue installments,
+    dispatching reminders via WhatsApp and Email.
+    Accessible by:
+    1. cron-job.org with ?cron_key=... or X-Cron-Key header
+    2. Authenticated staff with Bearer JWT
+    """
+    authorized = False
+    valid_keys = {settings.SECRET_KEY}
+    if hasattr(settings, "CRON_SECRET") and settings.CRON_SECRET:
+        valid_keys.add(settings.CRON_SECRET)
+
+    if (cron_key and cron_key in valid_keys) or (x_cron_key and x_cron_key in valid_keys):
+        authorized = True
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            from app.core.security import decode_token
+            payload = decode_token(token)
+            if payload and payload.get("sub"):
+                authorized = True
+        except Exception:
+            pass
+
+    if not authorized:
+        raise BadRequestException("Unauthorized cron trigger: Invalid cron key or missing authorization")
+
+    result = await notification_dispatcher.scan_and_dispatch_due_fee_reminders(
+        days_ahead=days_ahead,
+        include_overdue=include_overdue,
+        force=force
+    )
+    return result
