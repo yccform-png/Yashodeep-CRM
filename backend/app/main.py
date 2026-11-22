@@ -48,6 +48,8 @@ origins = list(set([
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
     "https://yashodeep-crm.vercel.app",
+    "https://yashodeepcoachingclasses.in",
+    "https://www.yashodeepcoachingclasses.in",
     *settings.BACKEND_CORS_ORIGINS
 ]))
 
