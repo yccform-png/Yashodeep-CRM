@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_CACHE_ENABLED: bool = True
     REDIS_DEFAULT_TTL: int = 300
-    REDIS_SOCKET_TIMEOUT: float = 1.0
-    REDIS_CONNECT_TIMEOUT: float = 2.0
+    REDIS_SOCKET_TIMEOUT: float = 5.0
+    REDIS_CONNECT_TIMEOUT: float = 5.0
 
     # Superuser initialization
     FIRST_SUPERUSER_EMAIL: str = "admin@institute.edu"
