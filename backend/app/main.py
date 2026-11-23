@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
@@ -81,6 +81,73 @@ async def health_check():
         "service": "institute-management-erp-backend",
         "environment": settings.ENVIRONMENT
     }
+
+
+# Public Meta / WhatsApp Compliance Endpoints
+@app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+async def privacy_policy():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Privacy Policy - Yashodeep Coaching Classes</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:760px;margin:40px auto;line-height:1.6;padding:0 24px;color:#1e293b;}</style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p><strong>Effective Date:</strong> November 2026</p>
+  <p>Yashodeep Coaching Classes operates the Institute Management ERP platform and sends automated academic notifications via official channels including the Meta WhatsApp Business Cloud API.</p>
+  <h2>Information We Collect</h2>
+  <p>We process student and parent contact numbers, full names, and academic records (such as attendance, fee status, and exam grades) provided upon admission.</p>
+  <h2>How We Use Information</h2>
+  <p>Information is strictly utilized for direct academic communications: attendance absence alerts, fee receipts, installment reminders, and examination results.</p>
+  <h2>Data Protection & Sharing</h2>
+  <p>We do not sell, rent, or distribute personal information to third parties or marketing brokers. Data is processed securely in compliance with applicable standards.</p>
+  <h2>Contact Us</h2>
+  <p>If you have any questions or data inquiries, contact us at: <a href="mailto:info@yashodeepcoachingclasses.in">info@yashodeepcoachingclasses.in</a></p>
+</body>
+</html>"""
+
+
+@app.get("/terms", response_class=HTMLResponse, include_in_schema=False)
+async def terms_of_service():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Terms of Service - Yashodeep Coaching Classes</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:760px;margin:40px auto;line-height:1.6;padding:0 24px;color:#1e293b;}</style>
+</head>
+<body>
+  <h1>Terms of Service</h1>
+  <p><strong>Effective Date:</strong> November 2026</p>
+  <p>By enrolling at Yashodeep Coaching Classes or receiving institutional alerts, you agree to receive automated communications related to courses, student attendance, fees, and examination announcements.</p>
+  <h2>Opting Out</h2>
+  <p>To update notification preferences or unsubscribe from automated SMS/WhatsApp alerts, parents may contact the front desk at our campus in Kuditre, Kolhapur.</p>
+</body>
+</html>"""
+
+
+@app.get("/data-deletion", response_class=HTMLResponse, include_in_schema=False)
+async def data_deletion_instructions():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Data Deletion Instructions - Yashodeep Coaching Classes</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:760px;margin:40px auto;line-height:1.6;padding:0 24px;color:#1e293b;}</style>
+</head>
+<body>
+  <h1>User Data Deletion Instructions</h1>
+  <p>In accordance with Meta Platform policies, users have the right to request deletion of their contact information and communication logs.</p>
+  <p>To request data deletion:</p>
+  <ol>
+    <li>Send an email to <a href="mailto:info@yashodeepcoachingclasses.in">info@yashodeepcoachingclasses.in</a> with the subject line <code>Data Deletion Request</code>.</li>
+    <li>Include your student registration number (PRN) and the registered WhatsApp mobile number.</li>
+    <li>Our administrative team will purge non-regulatory notification logs within 48 hours and send confirmation.</li>
+  </ol>
+</body>
+</html>"""
 
 
 # Include all Version 1 API routers
