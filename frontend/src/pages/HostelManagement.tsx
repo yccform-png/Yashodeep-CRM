@@ -188,6 +188,9 @@ export const HostelManagement: React.FC = () => {
   const [showAddRoomModal, setShowAddRoomModal] = useState<boolean>(false);
   const [roomFloorId, setRoomFloorId] = useState<string>('');
   const [roomNumber, setRoomNumber] = useState<string>('');
+  const [beddingType, setBeddingType] = useState<'BUNK' | 'SINGLE'>('BUNK');
+  const [bunkCount, setBunkCount] = useState<number>(1);
+  const [singleCount, setSingleCount] = useState<number>(1);
   const [roomType, setRoomType] = useState<string>('DOUBLE');
   const [roomCapacity, setRoomCapacity] = useState<number>(2);
   const [hasAttachedBathroom, setHasAttachedBathroom] = useState<boolean>(true);
@@ -401,6 +404,9 @@ export const HostelManagement: React.FC = () => {
   const openAddRoomModal = (floorId: string, floorNum: number) => {
     setRoomFloorId(floorId);
     setRoomNumber(`${floorNum}01`);
+    setBeddingType('BUNK');
+    setBunkCount(1);
+    setSingleCount(1);
     setRoomType('DOUBLE');
     setRoomCapacity(2);
     setHasAttachedBathroom(true);
@@ -411,20 +417,36 @@ export const HostelManagement: React.FC = () => {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roomFloorId) return;
+    if (!roomFloorId || !roomNumber.trim()) return;
     setActionLoading(true);
     setFeedback(null);
     try {
-      const normalizedType = roomType.startsWith('DORMITORY') ? 'DORMITORY' : roomType;
+      const finalCapacity = beddingType === 'BUNK' ? bunkCount * 2 : singleCount;
+      const finalRoomType =
+        finalCapacity > 2
+          ? 'DORMITORY'
+          : finalCapacity === 2
+          ? 'DOUBLE'
+          : 'SINGLE';
+
       const res = await apiClient.post(`/hostels/floors/${roomFloorId}/rooms`, {
-        room_number: roomNumber,
-        room_type: normalizedType,
-        capacity: Number(roomCapacity),
+        room_number: roomNumber.trim(),
+        room_type: finalRoomType,
+        capacity: finalCapacity,
         has_attached_bathroom: hasAttachedBathroom,
         is_ac: isAc,
         auto_create_beds: autoCreateBeds
       });
-      setFeedback({ type: 'success', text: `Room ${roomNumber} created successfully with ${autoCreateBeds ? `${roomCapacity} beds` : 'no beds'}` });
+
+      const summaryText =
+        beddingType === 'BUNK'
+          ? `${bunkCount} Bunk Beds (${finalCapacity} Berths: ${bunkCount} Lower + ${bunkCount} Upper)`
+          : `${singleCount} Single Beds`;
+
+      setFeedback({
+        type: 'success',
+        text: `Room ${roomNumber} created successfully with ${autoCreateBeds ? summaryText : 'no pre-generated berths'}`
+      });
       setShowAddRoomModal(false);
       await fetchHostels();
       if (res.data?.id) {
@@ -1162,34 +1184,39 @@ export const HostelManagement: React.FC = () => {
                                 }
                               });
 
-                              return Object.keys(bunksMap).map((grpKey) => {
-                                const grpNum = Number(grpKey);
-                                const bunk = bunksMap[grpNum];
-                                return (
-                                  <HostelBunkBedCard
-                                    key={grpNum}
-                                    bunkNumber={grpNum}
-                                    upperBed={bunk.upper}
-                                    lowerBed={bunk.lower}
-                                    onDeleteBunk={(bNum) => handleDeleteBunk(room.id, bNum, room.room_number)}
-                                    onSelectBed={(bed) => {
-                                      setSelectedRoomId(room.id);
-                                      if (bed.status === 'AVAILABLE') {
-                                        setSelectedBed(bed as any);
-                                        if (plans.length > 0 && !selectedPlanId) {
-                                          setSelectedPlanId(plans[0].id);
-                                          setCustomRentAmount(plans[0].base_amount);
-                                          setDepositAmount(plans[0].deposit_amount);
-                                          updateEndDateForFrequency(plans[0].billing_frequency);
-                                        }
-                                        setShowAllocateModal(true);
-                                      }
-                                    }}
-                                    showSubscriptionDetails={true}
-                                    compact={true}
-                                  />
-                                );
-                              });
+                              const bunkKeys = Object.keys(bunksMap);
+                              return (
+                                <div className={`grid gap-2 ${bunkKeys.length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[460px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                                  {bunkKeys.map((grpKey) => {
+                                    const grpNum = Number(grpKey);
+                                    const bunk = bunksMap[grpNum];
+                                    return (
+                                      <HostelBunkBedCard
+                                        key={grpNum}
+                                        bunkNumber={grpNum}
+                                        upperBed={bunk.upper}
+                                        lowerBed={bunk.lower}
+                                        onDeleteBunk={(bNum) => handleDeleteBunk(room.id, bNum, room.room_number)}
+                                        onSelectBed={(bed) => {
+                                          setSelectedRoomId(room.id);
+                                          if (bed.status === 'AVAILABLE') {
+                                            setSelectedBed(bed as any);
+                                            if (plans.length > 0 && !selectedPlanId) {
+                                              setSelectedPlanId(plans[0].id);
+                                              setCustomRentAmount(plans[0].base_amount);
+                                              setDepositAmount(plans[0].deposit_amount);
+                                              updateEndDateForFrequency(plans[0].billing_frequency);
+                                            }
+                                            setShowAllocateModal(true);
+                                          }
+                                        }}
+                                        showSubscriptionDetails={true}
+                                        compact={true}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              );
                             })()
                           )}
                         </div>
@@ -2294,11 +2321,16 @@ export const HostelManagement: React.FC = () => {
       {/* Add Room to Floor Modal */}
       {showAddRoomModal && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b pb-3">
               <div className="flex items-center space-x-2">
-                <Home className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-base font-bold text-slate-900">Add Room to Floor</h3>
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Home className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Add Room to Floor</h3>
+                  <p className="text-xs text-slate-500">Configure bed structure and capacity</p>
+                </div>
               </div>
               <button onClick={() => setShowAddRoomModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -2314,48 +2346,148 @@ export const HostelManagement: React.FC = () => {
                   placeholder="e.g. 104, 201, 301-A"
                   value={roomNumber}
                   onChange={(e) => setRoomNumber(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white"
+                  className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-semibold text-slate-800"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Room Type</label>
-                  <select
-                    value={roomType}
-                    onChange={(e) => {
-                      const t = e.target.value;
-                      setRoomType(t);
-                      if (t === 'SINGLE') setRoomCapacity(1);
-                      else if (t === 'DOUBLE') setRoomCapacity(2);
-                      else if (t === 'DORMITORY_4' || t === 'DORMITORY') setRoomCapacity(4);
-                      else if (t === 'DORMITORY_6') setRoomCapacity(6);
-                      else if (t === 'DORMITORY_8') setRoomCapacity(8);
-                    }}
-                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white"
+              {/* Bedding Structure Selector */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Bedding Structure</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBeddingType('BUNK')}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center space-x-2 ${
+                      beddingType === 'BUNK'
+                        ? 'border-indigo-600 bg-indigo-50/80 text-indigo-900 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-slate-100'
+                    }`}
                   >
-                    <option value="DOUBLE">Double Sharing (1 Bunk Bed • 2 Berths)</option>
-                    <option value="DORMITORY_4">4-Bed Sharing (2 Bunk Beds • 4 Berths)</option>
-                    <option value="DORMITORY_6">6-Bed Dormitory (3 Bunk Beds • 6 Berths)</option>
-                    <option value="DORMITORY_8">8-Bed Dormitory (4 Bunk Beds • 8 Berths)</option>
-                    <option value="SINGLE">Single Sharing (1 Single Bed)</option>
-                  </select>
-                </div>
+                    <Bed className={`w-4 h-4 ${beddingType === 'BUNK' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                    <div>
+                      <p className="font-bold">Double Bunk Beds</p>
+                      <p className="text-[10px] font-normal text-slate-500">2 Berths / Bed (Lower + Upper)</p>
+                    </div>
+                  </button>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Capacity (Berths) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="16"
-                    required
-                    value={roomCapacity}
-                    onChange={(e) => setRoomCapacity(parseInt(e.target.value) || 1)}
-                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setBeddingType('SINGLE')}
+                    className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition flex items-center space-x-2 ${
+                      beddingType === 'SINGLE'
+                        ? 'border-indigo-600 bg-indigo-50/80 text-indigo-900 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Bed className={`w-4 h-4 ${beddingType === 'SINGLE' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                    <div>
+                      <p className="font-bold">Single Beds</p>
+                      <p className="text-[10px] font-normal text-slate-500">1 Berth per Bed</p>
+                    </div>
+                  </button>
                 </div>
               </div>
 
+              {/* Dynamic Count Input & Quick Preset Pills */}
+              {beddingType === 'BUNK' ? (
+                <div className="space-y-2.5 p-3.5 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 block">
+                        Number of Bunk Beds
+                      </label>
+                      <span className="text-[10px] text-slate-500">Each bunk adds 2 berths (Lower + Upper)</span>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setBunkCount(Math.max(1, bunkCount - 1))}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold flex items-center justify-center text-sm shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        required
+                        value={bunkCount}
+                        onChange={(e) => setBunkCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                        className="w-16 text-center text-sm font-bold p-1 border border-indigo-300 rounded-lg bg-white text-indigo-900 shadow-2xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setBunkCount(Math.min(50, bunkCount + 1))}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold flex items-center justify-center text-sm shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quick Pick Pills for Bunk Counts */}
+                  <div className="pt-1">
+                    <span className="text-[10px] text-slate-500 font-medium block mb-1">Quick Select Bunk Count:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[1, 2, 3, 4, 6, 8, 10, 11, 12, 16, 20].map((count) => (
+                        <button
+                          key={count}
+                          type="button"
+                          onClick={() => setBunkCount(count)}
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition ${
+                            bunkCount === count
+                              ? 'bg-indigo-600 text-white shadow-2xs ring-1 ring-indigo-600'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300'
+                          }`}
+                        >
+                          {count} {count === 1 ? 'Bunk' : 'Bunks'} ({count * 2}B)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Real-time Calculation Summary Breakdown */}
+                  <div className="p-2.5 bg-white rounded-lg border border-indigo-200/80 text-xs space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-600 font-medium">Total Capacity:</span>
+                      <span className="font-bold text-indigo-700 text-sm">{bunkCount * 2} Berths / Positions</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                      <span>Berths Breakdown:</span>
+                      <span className="font-mono font-semibold text-slate-700">
+                        {bunkCount} Lower (↓) + {bunkCount} Upper (↑)
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] text-slate-500">
+                      <span>Room Classification:</span>
+                      <span className="font-semibold text-slate-800">
+                        {bunkCount === 1 ? 'Double Sharing Room' : `Dormitory (${bunkCount * 2}-Bed Room)`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800">Number of Single Beds</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      required
+                      value={singleCount}
+                      onChange={(e) => setSingleCount(Math.max(1, Math.min(30, parseInt(e.target.value) || 1)))}
+                      className="w-16 text-center text-sm font-bold p-1 border border-slate-300 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div className="p-2 bg-white rounded-lg border border-slate-200 text-xs flex justify-between">
+                    <span className="text-slate-600 font-medium">Total Capacity:</span>
+                    <span className="font-bold text-slate-900">{singleCount} Single Bed(s)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Amenities & Auto-Provisioning */}
               <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-700">Attached Bathroom</span>
@@ -2363,7 +2495,7 @@ export const HostelManagement: React.FC = () => {
                     type="checkbox"
                     checked={hasAttachedBathroom}
                     onChange={(e) => setHasAttachedBathroom(e.target.checked)}
-                    className="rounded text-indigo-600"
+                    className="rounded text-indigo-600 w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs">
@@ -2372,16 +2504,27 @@ export const HostelManagement: React.FC = () => {
                     type="checkbox"
                     checked={isAc}
                     onChange={(e) => setIsAc(e.target.checked)}
-                    className="rounded text-indigo-600"
+                    className="rounded text-indigo-600 w-4 h-4"
                   />
                 </div>
-                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200">
-                  <span className="font-semibold text-indigo-900">Auto-Provision Bunk Beds (Lower + Upper Berths)</span>
+                <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-200">
+                  <div>
+                    <span className="font-semibold text-indigo-900 block">
+                      {beddingType === 'BUNK'
+                        ? `Auto-Provision ${bunkCount * 2} Berths (${bunkCount} Bunk Beds)`
+                        : `Auto-Provision ${singleCount} Single Bed(s)`}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {beddingType === 'BUNK'
+                        ? 'Generates paired Lower (-L) and Upper (-U) berths ready for student registration'
+                        : 'Generates single beds ready for student registration'}
+                    </span>
+                  </div>
                   <input
                     type="checkbox"
                     checked={autoCreateBeds}
                     onChange={(e) => setAutoCreateBeds(e.target.checked)}
-                    className="rounded text-indigo-600"
+                    className="rounded text-indigo-600 w-4 h-4"
                   />
                 </div>
               </div>
@@ -2396,10 +2539,16 @@ export const HostelManagement: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading || !roomNumber}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 disabled:opacity-50"
+                  disabled={actionLoading || !roomNumber.trim()}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 disabled:opacity-50 flex items-center space-x-1.5"
                 >
-                  {actionLoading ? 'Creating...' : 'Create Room & Beds'}
+                  {actionLoading ? (
+                    <span>Creating Room & Berths...</span>
+                  ) : (
+                    <span>
+                      Create Room ({beddingType === 'BUNK' ? `${bunkCount} Bunks • ${bunkCount * 2} Beds` : `${singleCount} Beds`})
+                    </span>
+                  )}
                 </button>
               </div>
             </form>

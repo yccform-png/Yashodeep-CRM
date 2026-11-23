@@ -317,7 +317,7 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
               </div>
 
               {/* Bunk Beds Layout */}
-              <div className="space-y-3">
+              <div>
                 {rm.capacity === 1 ? (
                   <HostelBunkBedCard
                     singleBed={rm.beds[0]}
@@ -327,22 +327,24 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
                     compact={compact}
                   />
                 ) : (
-                  Object.keys(bunksMap).map((grpKey) => {
-                    const grpNum = Number(grpKey);
-                    const bunk = bunksMap[grpNum];
-                    return (
-                      <HostelBunkBedCard
-                        key={grpNum}
-                        bunkNumber={grpNum}
-                        upperBed={bunk.upper}
-                        lowerBed={bunk.lower}
-                        selectedBedId={selectedBedId}
-                        onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
-                        interactiveOnlyAvailable={interactiveOnlyAvailable}
-                        compact={compact}
-                      />
-                    );
-                  })
+                  <div className={`grid gap-2.5 ${Object.keys(bunksMap).length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[480px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                    {Object.keys(bunksMap).map((grpKey) => {
+                      const grpNum = Number(grpKey);
+                      const bunk = bunksMap[grpNum];
+                      return (
+                        <HostelBunkBedCard
+                          key={grpNum}
+                          bunkNumber={grpNum}
+                          upperBed={bunk.upper}
+                          lowerBed={bunk.lower}
+                          selectedBedId={selectedBedId}
+                          onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
+                          interactiveOnlyAvailable={interactiveOnlyAvailable}
+                          compact={compact}
+                        />
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
