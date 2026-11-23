@@ -12,7 +12,9 @@ import {
   ArrowDown,
   Bed,
   Search,
-  Check
+  Check,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { HostelBunkBedCard, HostelBedItem } from './HostelBunkBedCard';
 
@@ -45,6 +47,28 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
   const [selectedFloorId, setSelectedFloorId] = useState<string>('');
   const [roomFilter, setRoomFilter] = useState<'ALL' | 'VACANT' | 'AC'>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [collapsedRoomIds, setCollapsedRoomIds] = useState<Set<string>>(new Set());
+
+  const toggleCollapseRoom = (roomId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCollapsedRoomIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(roomId)) {
+        next.delete(roomId);
+      } else {
+        next.add(roomId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllRoomsCollapse = () => {
+    if (collapsedRoomIds.size === displayRooms.length) {
+      setCollapsedRoomIds(new Set());
+    } else {
+      setCollapsedRoomIds(new Set(displayRooms.map((r: any) => r.id)));
+    }
+  };
 
   // Default selection if not set
   const currentHostel = filteredHostels[0] || hostels[0] || null;
@@ -212,6 +236,25 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
               <option value="VACANT">Has Vacancy</option>
               <option value="AC">AC Rooms</option>
             </select>
+
+            <button
+              type="button"
+              onClick={toggleAllRoomsCollapse}
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center space-x-1 shrink-0"
+              title={collapsedRoomIds.size === displayRooms.length ? 'Expand All Rooms' : 'Collapse All Rooms'}
+            >
+              {collapsedRoomIds.size === displayRooms.length && displayRooms.length > 0 ? (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Expand All</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Collapse All</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -273,6 +316,7 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
           }
 
           const hasSelectedBedInRoom = rm.beds.some((b: any) => b.id === selectedBedId);
+          const isCollapsed = collapsedRoomIds.has(rm.id);
 
           return (
             <div
@@ -311,46 +355,76 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
                   </div>
                 </div>
 
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    isFull ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                >
-                  {availCount} / {rm.capacity} Vacant
-                </span>
+                <div className="flex items-center space-x-1.5">
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isFull ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {availCount} / {rm.capacity} Vacant
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => toggleCollapseRoom(rm.id, e)}
+                    className="p-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition"
+                    title={isCollapsed ? 'Expand Room Berths' : 'Collapse Room'}
+                  >
+                    {isCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
 
-              {/* Bunk Beds Layout */}
-              <div>
-                {rm.capacity === 1 ? (
-                  <HostelBunkBedCard
-                    singleBed={rm.beds[0]}
-                    selectedBedId={selectedBedId}
-                    onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
-                    interactiveOnlyAvailable={interactiveOnlyAvailable}
-                    compact={compact}
-                  />
-                ) : (
-                  <div className={`grid gap-2.5 ${Object.keys(bunksMap).length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[480px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
-                    {Object.keys(bunksMap).map((grpKey) => {
-                      const grpNum = Number(grpKey);
-                      const bunk = bunksMap[grpNum];
-                      return (
-                        <HostelBunkBedCard
-                          key={grpNum}
-                          bunkNumber={grpNum}
-                          upperBed={bunk.upper}
-                          lowerBed={bunk.lower}
-                          selectedBedId={selectedBedId}
-                          onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
-                          interactiveOnlyAvailable={interactiveOnlyAvailable}
-                          compact={compact}
-                        />
-                      );
-                    })}
+              {/* Bunk Beds Layout or Collapsed Summary */}
+              {isCollapsed && !hasSelectedBedInRoom ? (
+                <div
+                  onClick={(e) => toggleCollapseRoom(rm.id, e)}
+                  className="py-2.5 px-3 bg-slate-50 hover:bg-indigo-50/60 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs cursor-pointer transition group"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Bed className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition" />
+                    <span className="text-slate-700 font-medium">
+                      {rm.capacity > 1
+                        ? `${Math.ceil(rm.capacity / 2)} Bunks • ${rm.capacity} Berths (${availCount} Vacant)`
+                        : `1 Single Bed (${availCount} Vacant)`}
+                    </span>
                   </div>
-                )}
-              </div>
+                  <span className="text-indigo-600 font-bold flex items-center space-x-1 text-[11px]">
+                    <span>Show Berths</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  {rm.capacity === 1 ? (
+                    <HostelBunkBedCard
+                      singleBed={rm.beds[0]}
+                      selectedBedId={selectedBedId}
+                      onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
+                      interactiveOnlyAvailable={interactiveOnlyAvailable}
+                      compact={compact}
+                    />
+                  ) : (
+                    <div className={`grid gap-2.5 ${Object.keys(bunksMap).length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[480px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                      {Object.keys(bunksMap).map((grpKey) => {
+                        const grpNum = Number(grpKey);
+                        const bunk = bunksMap[grpNum];
+                        return (
+                          <HostelBunkBedCard
+                            key={grpNum}
+                            bunkNumber={grpNum}
+                            upperBed={bunk.upper}
+                            lowerBed={bunk.lower}
+                            selectedBedId={selectedBedId}
+                            onSelectBed={(bed) => onSelectBed && onSelectBed(bed, rm)}
+                            interactiveOnlyAvailable={interactiveOnlyAvailable}
+                            compact={compact}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

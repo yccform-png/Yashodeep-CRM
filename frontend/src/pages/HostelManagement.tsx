@@ -24,6 +24,8 @@ import {
   Snowflake,
   Bath,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Filter,
   Eye,
   Lock,
@@ -167,6 +169,30 @@ export const HostelManagement: React.FC = () => {
   const [transferTargetBedId, setTransferTargetBedId] = useState<string>('');
   const [transferRemarks, setTransferRemarks] = useState<string>('');
   const [transferScope, setTransferScope] = useState<'SAME_ROOM' | 'SAME_FLOOR' | 'ALL'>('SAME_ROOM');
+
+  // Collapsed Rooms State (for compact mobile & desktop views)
+  const [collapsedRoomIds, setCollapsedRoomIds] = useState<Set<string>>(new Set());
+
+  const toggleCollapseRoom = (roomId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCollapsedRoomIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(roomId)) {
+        next.delete(roomId);
+      } else {
+        next.add(roomId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllRoomsCollapse = () => {
+    if (collapsedRoomIds.size === filteredRooms.length) {
+      setCollapsedRoomIds(new Set());
+    } else {
+      setCollapsedRoomIds(new Set(filteredRooms.map((r) => r.id)));
+    }
+  };
 
   // Visitor form
   const [visitorForm, setVisitorForm] = useState({
@@ -1171,6 +1197,27 @@ export const HostelManagement: React.FC = () => {
                     <Snowflake className="w-3 h-3" />
                     <span>AC Only</span>
                   </button>
+
+                  <div className="flex items-center space-x-1 sm:ml-auto">
+                    <button
+                      type="button"
+                      onClick={toggleAllRoomsCollapse}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center space-x-1"
+                      title={collapsedRoomIds.size === filteredRooms.length ? 'Expand All Rooms' : 'Collapse All Rooms'}
+                    >
+                      {collapsedRoomIds.size === filteredRooms.length && filteredRooms.length > 0 ? (
+                        <>
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Expand All</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Collapse All</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1201,6 +1248,7 @@ export const HostelManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredRooms.map((room) => {
                     const isSelected = selectedRoomId === room.id;
+                    const isCollapsed = collapsedRoomIds.has(room.id);
                     const roomOccupied = room.beds.filter((b) => b.status === 'OCCUPIED').length;
                     const isFull = roomOccupied === room.capacity;
                     const isVacant = roomOccupied === 0;
@@ -1243,85 +1291,117 @@ export const HostelManagement: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Occupancy Badge */}
-                          <span
-                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center space-x-1 ${
-                              isFull
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : isVacant
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}
-                          >
+                          <div className="flex items-center space-x-1.5">
+                            {/* Occupancy Badge */}
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isFull ? 'bg-rose-500' : isVacant ? 'bg-emerald-500' : 'bg-amber-500'
+                              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center space-x-1 ${
+                                isFull
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : isVacant
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}
-                            />
-                            <span>
-                              {roomOccupied} / {room.capacity} Beds
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isFull ? 'bg-rose-500' : isVacant ? 'bg-emerald-500' : 'bg-amber-500'
+                                }`}
+                              />
+                              <span>
+                                {roomOccupied} / {room.capacity} Beds
+                              </span>
                             </span>
-                          </span>
+
+                            {/* Collapse/Expand Toggle Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => toggleCollapseRoom(room.id, e)}
+                              className="p-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition"
+                              title={isCollapsed ? 'Expand Room Berths' : 'Collapse Room'}
+                            >
+                              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </div>
 
-                        {/* 2-Tier Bunk Bed Layout */}
-                        <div className="space-y-2">
-                          {room.capacity === 1 ? (
-                            <HostelBunkBedCard
-                              singleBed={room.beds[0]}
-                              showSubscriptionDetails={true}
-                              compact={true}
-                            />
-                          ) : (
-                            (() => {
-                              const bunksMap: Record<number, { upper?: any; lower?: any }> = {};
-                              room.beds.forEach((bed, idx) => {
-                                const grp = bed.bunk_group || Math.floor(idx / 2) + 1;
-                                if (!bunksMap[grp]) bunksMap[grp] = {};
-                                const isUpper = bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') || bed.bed_number.endsWith('-B');
-                                if (isUpper) {
-                                  bunksMap[grp].upper = bed;
-                                } else {
-                                  bunksMap[grp].lower = bed;
-                                }
-                              });
+                        {/* Collapsed Compact Strip vs Expanded 2-Tier Bunk Bed Layout */}
+                        {isCollapsed ? (
+                          <div
+                            onClick={(e) => toggleCollapseRoom(room.id, e)}
+                            className="py-2 px-3 bg-slate-50/80 hover:bg-indigo-50/60 rounded-xl border border-slate-200/70 flex items-center justify-between text-xs cursor-pointer transition group"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <Bed className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition" />
+                              <span className="text-slate-700 font-medium">
+                                {room.capacity > 1
+                                  ? `${Math.ceil(room.capacity / 2)} Bunks • ${room.capacity} Berths (${room.capacity - roomOccupied} Vacant)`
+                                  : `1 Single Bed (${room.capacity - roomOccupied} Vacant)`}
+                              </span>
+                            </div>
+                            <span className="text-indigo-600 font-bold flex items-center space-x-1 text-[11px]">
+                              <span>Show Berths</span>
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {room.capacity === 1 ? (
+                              <HostelBunkBedCard
+                                singleBed={room.beds[0]}
+                                showSubscriptionDetails={true}
+                                compact={true}
+                              />
+                            ) : (
+                              (() => {
+                                const bunksMap: Record<number, { upper?: any; lower?: any }> = {};
+                                room.beds.forEach((bed, idx) => {
+                                  const grp = bed.bunk_group || Math.floor(idx / 2) + 1;
+                                  if (!bunksMap[grp]) bunksMap[grp] = {};
+                                  const isUpper = bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') || bed.bed_number.endsWith('-B');
+                                  if (isUpper) {
+                                    bunksMap[grp].upper = bed;
+                                  } else {
+                                    bunksMap[grp].lower = bed;
+                                  }
+                                });
 
-                              const bunkKeys = Object.keys(bunksMap);
-                              return (
-                                <div className={`grid gap-2 ${bunkKeys.length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[460px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
-                                  {bunkKeys.map((grpKey) => {
-                                    const grpNum = Number(grpKey);
-                                    const bunk = bunksMap[grpNum];
-                                    return (
-                                      <HostelBunkBedCard
-                                        key={grpNum}
-                                        bunkNumber={grpNum}
-                                        upperBed={bunk.upper}
-                                        lowerBed={bunk.lower}
-                                        onDeleteBunk={(bNum) => handleDeleteBunk(room.id, bNum, room.room_number)}
-                                        onSelectBed={(bed) => {
-                                          setSelectedRoomId(room.id);
-                                          if (bed.status === 'AVAILABLE') {
-                                            setSelectedBed(bed as any);
-                                            if (plans.length > 0 && !selectedPlanId) {
-                                              setSelectedPlanId(plans[0].id);
-                                              setCustomRentAmount(plans[0].base_amount);
-                                              setDepositAmount(plans[0].deposit_amount);
-                                              updateEndDateForFrequency(plans[0].billing_frequency);
+                                const bunkKeys = Object.keys(bunksMap);
+                                return (
+                                  <div className={`grid gap-2 ${bunkKeys.length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[460px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                                    {bunkKeys.map((grpKey) => {
+                                      const grpNum = Number(grpKey);
+                                      const bunk = bunksMap[grpNum];
+                                      return (
+                                        <HostelBunkBedCard
+                                          key={grpNum}
+                                          bunkNumber={grpNum}
+                                          upperBed={bunk.upper}
+                                          lowerBed={bunk.lower}
+                                          onDeleteBunk={(bNum) => handleDeleteBunk(room.id, bNum, room.room_number)}
+                                          onSelectBed={(bed) => {
+                                            setSelectedRoomId(room.id);
+                                            if (bed.status === 'AVAILABLE') {
+                                              setSelectedBed(bed as any);
+                                              if (plans.length > 0 && !selectedPlanId) {
+                                                setSelectedPlanId(plans[0].id);
+                                                setCustomRentAmount(plans[0].base_amount);
+                                                setDepositAmount(plans[0].deposit_amount);
+                                                updateEndDateForFrequency(plans[0].billing_frequency);
+                                              }
+                                              setShowAllocateModal(true);
                                             }
-                                            setShowAllocateModal(true);
-                                          }
-                                        }}
-                                        showSubscriptionDetails={true}
-                                        compact={true}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })()
-                          )}
-                        </div>
+                                          }}
+                                          showSubscriptionDetails={true}
+                                          compact={true}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()
+                            )}
+                          </div>
+                        )}
 
                         {/* Room Card Footer & Quick Actions */}
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
