@@ -85,26 +85,38 @@ def seed_data():
         # 3. Super Admin User
         admin_user = db.query(User).filter_by(email=settings.FIRST_SUPERUSER_EMAIL).first()
         if not admin_user:
-            admin_user = User(
-                institute_id=institute.id,
-                email=settings.FIRST_SUPERUSER_EMAIL,
-                mobile="+919999900001",
-                hashed_password=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
-                first_name=settings.FIRST_SUPERUSER_FIRSTNAME,
-                last_name=settings.FIRST_SUPERUSER_LASTNAME,
-                user_type=SystemRole.SUPER_ADMIN.value,
-                is_active=True,
-                is_verified=True
-            )
-            db.add(admin_user)
-            db.flush()
+            old_admin = db.query(User).filter(User.email.in_(["admin@institute.edu", settings.FIRST_SUPERUSER_EMAIL])).first()
+            if old_admin:
+                old_admin.email = settings.FIRST_SUPERUSER_EMAIL
+                old_admin.hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
+                old_admin.first_name = settings.FIRST_SUPERUSER_FIRSTNAME
+                old_admin.last_name = settings.FIRST_SUPERUSER_LASTNAME
+                old_admin.is_active = True
+                old_admin.is_verified = True
+                db.flush()
+                admin_user = old_admin
+                print(f"✅ Updated Super Admin: {admin_user.email}")
+            else:
+                admin_user = User(
+                    institute_id=institute.id,
+                    email=settings.FIRST_SUPERUSER_EMAIL,
+                    mobile="+919999900001",
+                    hashed_password=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
+                    first_name=settings.FIRST_SUPERUSER_FIRSTNAME,
+                    last_name=settings.FIRST_SUPERUSER_LASTNAME,
+                    user_type=SystemRole.SUPER_ADMIN.value,
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(admin_user)
+                db.flush()
 
-            # Assign Super Admin Role
-            super_role = roles_map[SystemRole.SUPER_ADMIN.value]
-            ur = UserRole(user_id=admin_user.id, role_id=super_role.id)
-            db.add(ur)
-            db.flush()
-            print(f"✅ Created Super Admin: {admin_user.email}")
+                # Assign Super Admin Role
+                super_role = roles_map[SystemRole.SUPER_ADMIN.value]
+                ur = UserRole(user_id=admin_user.id, role_id=super_role.id)
+                db.add(ur)
+                db.flush()
+                print(f"✅ Created Super Admin: {admin_user.email}")
 
         # 4. Academic Master Configuration
         # Academic Year

@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.core.config import settings
 
 
 @pytest.mark.asyncio
@@ -20,7 +21,7 @@ async def test_auth_refresh_sliding_session(client: AsyncClient, auth_headers: d
     data = res.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
-    assert data["email"] == "admin@institute.edu"
+    assert data["email"] == settings.FIRST_SUPERUSER_EMAIL
     assert "SUPER_ADMIN" in data["roles"]
 
     new_token = data["access_token"]
@@ -30,4 +31,4 @@ async def test_auth_refresh_sliding_session(client: AsyncClient, auth_headers: d
     new_headers = {"Authorization": f"Bearer {new_token}"}
     res_me = await client.get("/api/v1/auth/me", headers=new_headers)
     assert res_me.status_code == 200
-    assert res_me.json()["email"] == "admin@institute.edu"
+    assert res_me.json()["email"] == settings.FIRST_SUPERUSER_EMAIL

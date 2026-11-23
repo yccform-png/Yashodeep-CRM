@@ -81,9 +81,9 @@ class Settings(BaseSettings):
     REDIS_CONNECT_TIMEOUT: float = 5.0
 
     # Superuser initialization
-    FIRST_SUPERUSER_EMAIL: str = "admin@institute.edu"
-    FIRST_SUPERUSER_PASSWORD: str = "AdminSecurePass@2026!"
-    FIRST_SUPERUSER_FIRSTNAME: str = "Super"
+    FIRST_SUPERUSER_EMAIL: str = "yccform@gmail.com"
+    FIRST_SUPERUSER_PASSWORD: str = "@Yashodeep123"
+    FIRST_SUPERUSER_FIRSTNAME: str = "Yashodeep"
     FIRST_SUPERUSER_LASTNAME: str = "Admin"
 
     # Institute Defaults

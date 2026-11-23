@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Building2, Shield, Lock, Mail, ArrowRight, Clock } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Clock } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 export const Login: React.FC = () => {
-  const [username, setUsername] = useState('admin@institute.edu');
-  const [password, setPassword] = useState('AdminSecurePass@2026!');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +78,7 @@ export const Login: React.FC = () => {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin@institute.edu"
+                placeholder="yccform@gmail.com"
                 className="w-full pl-9 pr-4 py-2.5 text-xs bg-slate-800/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition"
               />
             </div>
@@ -102,22 +102,12 @@ export const Login: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-xl text-xs transition duration-150 flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+            className="w-full mt-2 py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-xl text-xs transition duration-150 flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
           >
             <span>{loading ? 'Authenticating...' : 'Sign In to ERP Portal'}</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
-
-        {/* Demo Fast-Fill Pill */}
-        <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <p className="text-[11px] text-slate-400 mb-2">Default Master Admin Credentials:</p>
-          <div className="inline-flex items-center space-x-2 bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700 text-[11px] text-emerald-400 font-mono">
-            <span>admin@institute.edu</span>
-            <span className="text-slate-500">|</span>
-            <span>AdminSecurePass@2026!</span>
-          </div>
-        </div>
       </div>
     </div>
   );
