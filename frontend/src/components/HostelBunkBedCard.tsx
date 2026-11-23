@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bed, CheckCircle2, User, Clock, ArrowUp, ArrowDown } from 'lucide-react';
+import { Bed, CheckCircle2, User, Clock, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 
 export interface HostelBedItem {
   id: string;
@@ -27,6 +27,7 @@ interface HostelBunkBedCardProps {
   singleBed?: HostelBedItem | null;
   selectedBedId?: string | null;
   onSelectBed?: (bed: HostelBedItem) => void;
+  onDeleteBunk?: (bunkNumber: number) => void;
   interactiveOnlyAvailable?: boolean;
   showSubscriptionDetails?: boolean;
   compact?: boolean;
@@ -39,6 +40,7 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
   singleBed,
   selectedBedId,
   onSelectBed,
+  onDeleteBunk,
   interactiveOnlyAvailable = false,
   showSubscriptionDetails = true,
   compact = false
@@ -192,7 +194,22 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
           <span>Bunk {bunkNumber}</span>
           <span className="text-[10px] text-slate-400 font-normal">(Double Berth)</span>
         </span>
-        <span className="text-[10px] text-slate-400 font-mono">2-Tier</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-[10px] text-slate-400 font-mono">2-Tier</span>
+          {onDeleteBunk && (!upperBed || upperBed.status !== 'OCCUPIED') && (!lowerBed || lowerBed.status !== 'OCCUPIED') && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteBunk(bunkNumber);
+              }}
+              className="text-slate-400 hover:text-rose-600 transition p-0.5 rounded cursor-pointer"
+              title={`Delete Bunk ${bunkNumber} (both berths)`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Frame Container with stylized left ladder */}

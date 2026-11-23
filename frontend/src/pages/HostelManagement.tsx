@@ -415,9 +415,10 @@ export const HostelManagement: React.FC = () => {
     setActionLoading(true);
     setFeedback(null);
     try {
+      const normalizedType = roomType.startsWith('DORMITORY') ? 'DORMITORY' : roomType;
       const res = await apiClient.post(`/hostels/floors/${roomFloorId}/rooms`, {
         room_number: roomNumber,
-        room_type: roomType,
+        room_type: normalizedType,
         capacity: Number(roomCapacity),
         has_attached_bathroom: hasAttachedBathroom,
         is_ac: isAc,
@@ -454,19 +455,42 @@ export const HostelManagement: React.FC = () => {
     }
   };
 
-  const handleAddBed = async (roomId: string, roomNum: string) => {
+  const handleAddBunk = async (roomId: string, roomNum: string) => {
     setActionLoading(true);
     setFeedback(null);
     try {
-      const res = await apiClient.post(`/hostels/rooms/${roomId}/beds`, {});
-      setFeedback({ type: 'success', text: `Added ${res.data.bed_label || res.data.bed_number} to Room ${roomNum}` });
+      const res = await apiClient.post<HostelBed[]>(`/hostels/rooms/${roomId}/bunks`);
+      const beds = res.data;
+      const lower = beds[0]?.bed_number || 'Lower';
+      const upper = beds[1]?.bed_number || 'Upper';
+      setFeedback({
+        type: 'success',
+        text: `Added Bunk Bed (${lower} & ${upper}) to Room ${roomNum} (+2 positions)`
+      });
       await fetchHostels();
     } catch (err: any) {
-      setFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to add bed' });
+      setFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to add bunk bed' });
     } finally {
       setActionLoading(false);
     }
   };
+
+  const handleDeleteBunk = async (roomId: string, bunkGroup: number, roomNum: string) => {
+    if (!window.confirm(`Delete entire Bunk ${bunkGroup} (both Lower & Upper berths) from Room ${roomNum}?`)) return;
+    setActionLoading(true);
+    setFeedback(null);
+    try {
+      await apiClient.delete(`/hostels/rooms/${roomId}/bunks/${bunkGroup}`);
+      setFeedback({ type: 'success', text: `Bunk ${bunkGroup} (2 berths) deleted successfully from Room ${roomNum}` });
+      await fetchHostels();
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to delete bunk' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAddBed = handleAddBunk;
 
   const handleDeleteBed = async (bedId: string, bedLabelStr: string) => {
     if (!window.confirm(`Delete vacant ${bedLabelStr}?`)) return;
@@ -1147,6 +1171,20 @@ export const HostelManagement: React.FC = () => {
                                     bunkNumber={grpNum}
                                     upperBed={bunk.upper}
                                     lowerBed={bunk.lower}
+                                    onDeleteBunk={(bNum) => handleDeleteBunk(room.id, bNum, room.room_number)}
+                                    onSelectBed={(bed) => {
+                                      setSelectedRoomId(room.id);
+                                      if (bed.status === 'AVAILABLE') {
+                                        setSelectedBed(bed as any);
+                                        if (plans.length > 0 && !selectedPlanId) {
+                                          setSelectedPlanId(plans[0].id);
+                                          setCustomRentAmount(plans[0].base_amount);
+                                          setDepositAmount(plans[0].deposit_amount);
+                                          updateEndDateForFrequency(plans[0].billing_frequency);
+                                        }
+                                        setShowAllocateModal(true);
+                                      }
+                                    }}
                                     showSubscriptionDetails={true}
                                     compact={true}
                                   />
@@ -1169,13 +1207,13 @@ export const HostelManagement: React.FC = () => {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleAddBed(room.id, room.room_number);
+                                  handleAddBunk(room.id, room.room_number);
                                 }}
-                                className="px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-lg text-[10px] font-bold transition flex items-center space-x-0.5"
-                                title="Add Bed to Room"
+                                className="px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 rounded-lg text-[10px] font-bold transition flex items-center space-x-1"
+                                title="Add Bunk Bed (2 Berths: Lower + Upper)"
                               >
-                                <Plus className="w-3 h-3" />
-                                <span>Bed</span>
+                                <Plus className="w-3 h-3 text-indigo-600" />
+                                <span>+ Bunk (2 Beds)</span>
                               </button>
                             )}
 
@@ -1270,12 +1308,12 @@ export const HostelManagement: React.FC = () => {
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => handleAddBed(selectedRoom.id, selectedRoom.room_number)}
+                        onClick={() => handleAddBunk(selectedRoom.id, selectedRoom.room_number)}
                         disabled={actionLoading}
                         className="flex-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        <span>Add Bed to Room</span>
+                        <span>+ Add Bunk (2 Berths)</span>
                       </button>
 
                       {selectedRoom.beds.every((b) => b.status !== 'OCCUPIED') ? (
@@ -1300,164 +1338,228 @@ export const HostelManagement: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Detailed Bed Bays */}
+                  {/* Detailed Bed Bays Grouped by Bunk */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      <span>Room Beds ({selectedRoom.beds.length})</span>
+                      <span>Room Beds ({selectedRoom.beds.length} Berths)</span>
                       <span className="text-[10px] text-slate-400 font-normal lowercase">Click bed to manage</span>
                     </div>
 
                     <div className="space-y-3">
-                      {selectedRoom.beds.map((bed) => {
-                        const isOccupied = bed.status === 'OCCUPIED';
-                        const subStatus = getBedSubscriptionStatus(bed);
+                      {(() => {
+                        const bunksMap: Record<number, { upper?: any; lower?: any; single?: any }> = {};
+                        selectedRoom.beds.forEach((bed, idx) => {
+                          if (bed.tier === 'SINGLE') {
+                            bunksMap[idx + 1000] = { single: bed };
+                            return;
+                          }
+                          let grp = bed.bunk_group;
+                          if (!grp) {
+                            const match = bed.bed_number.match(/-B(\d+)-/);
+                            grp = match ? parseInt(match[1]) : 1;
+                          }
+                          if (!bunksMap[grp]) bunksMap[grp] = {};
+                          const isUpper = bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') || bed.bed_number.endsWith('-B');
+                          if (isUpper) {
+                            bunksMap[grp].upper = bed;
+                          } else {
+                            bunksMap[grp].lower = bed;
+                          }
+                        });
 
-                        return (
-                          <div
-                            key={bed.id}
-                            className={`p-3.5 rounded-xl border text-xs space-y-2.5 transition-all ${
-                              isOccupied ? 'bg-rose-50/50 border-rose-200' : 'bg-emerald-50/50 border-emerald-200'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-center space-x-2">
-                                <div
-                                  className={`p-1.5 rounded-lg ${
-                                    isOccupied ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                                  }`}
-                                >
-                                  <Bed className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center space-x-1.5">
-                                    {bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') ? (
-                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                                        <ArrowUp className="w-2.5 h-2.5 mr-0.5 text-blue-600" /> Upper
-                                      </span>
-                                    ) : bed.tier === 'SINGLE' ? (
-                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                                        Single
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
-                                        <ArrowDown className="w-2.5 h-2.5 mr-0.5 text-amber-700" /> Lower
-                                      </span>
-                                    )}
-                                    <span className="font-bold text-slate-900 text-sm">
-                                      {bed.bed_label || bed.bed_number}
-                                    </span>
-                                    {isAdmin && !isOccupied && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteBed(bed.id, bed.bed_label || bed.bed_number)}
-                                        className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition"
-                                        title="Delete Vacant Bed"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
+                        const renderBedBay = (bed: any, tier: 'UPPER' | 'LOWER' | 'SINGLE') => {
+                          const isOccupied = bed.status === 'OCCUPIED';
+                          const subStatus = getBedSubscriptionStatus(bed);
+
+                          return (
+                            <div
+                              key={bed.id}
+                              className={`p-3.5 rounded-xl border text-xs space-y-2.5 transition-all ${
+                                isOccupied ? 'bg-rose-50/50 border-rose-200' : 'bg-emerald-50/50 border-emerald-200'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <div
+                                    className={`p-1.5 rounded-lg ${
+                                      isOccupied ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    <Bed className="w-4 h-4" />
                                   </div>
-                                  <span className="text-[10px] text-slate-500 font-mono">ID: {bed.bed_number}</span>
+                                  <div>
+                                    <div className="flex items-center space-x-1.5">
+                                      {tier === 'UPPER' ? (
+                                        <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                          <ArrowUp className="w-2.5 h-2.5 mr-0.5 text-blue-600 stroke-[3]" /> Upper Berth
+                                        </span>
+                                      ) : tier === 'LOWER' ? (
+                                        <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                                          <ArrowDown className="w-2.5 h-2.5 mr-0.5 text-amber-700 stroke-[3]" /> Lower Berth
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                          Single Bed
+                                        </span>
+                                      )}
+                                      <span className="font-bold text-slate-900 text-sm">
+                                        {bed.bed_label || bed.bed_number}
+                                      </span>
+                                      {tier === 'SINGLE' && isAdmin && !isOccupied && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteBed(bed.id, bed.bed_label || bed.bed_number)}
+                                          className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition"
+                                          title="Delete Vacant Single Bed"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 font-mono">ID: {bed.bed_number}</span>
+                                  </div>
                                 </div>
+
+                                {isOccupied && subStatus ? (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${subStatus.badgeClass}`}>
+                                    {subStatus.label}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                    Available
+                                  </span>
+                                )}
                               </div>
 
-                              {isOccupied && subStatus ? (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${subStatus.badgeClass}`}>
-                                  {subStatus.label}
-                                </span>
+                              {isOccupied ? (
+                                <>
+                                  {/* Occupant Details Card */}
+                                  <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1.5">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-slate-500">Student:</span>
+                                      <span className="font-bold text-slate-900">{bed.occupant_name}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[10px]">
+                                      <span className="text-slate-500">Roll/Code:</span>
+                                      <span className="font-mono font-bold text-emerald-700">{bed.occupant_code}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                      <span className="text-slate-500">Plan:</span>
+                                      <span className="font-semibold text-slate-800">
+                                        {bed.plan_name || 'Hostel Boarding'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-slate-500">Tariff:</span>
+                                      <span className="font-bold text-slate-900">
+                                        ₹{Number(bed.unit_price || 0).toLocaleString('en-IN')}/
+                                        {bed.billing_frequency?.toLowerCase().replace('_', ' ') || 'mo'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-slate-500">Caution Deposit:</span>
+                                      <span className="font-bold text-blue-700">
+                                        ₹{Number(bed.deposit_amount || 0).toLocaleString('en-IN')}
+                                      </span>
+                                    </div>
+                                    {bed.allocation_end_date && (
+                                      <div className="flex justify-between items-center text-[10px] pt-1 border-t border-slate-100">
+                                        <span className="text-slate-500">Valid Through:</span>
+                                        <span className="font-semibold text-slate-700">{bed.allocation_end_date}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Actions */}
+                                  <div className="flex items-center space-x-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenRenewModal(bed)}
+                                      className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+                                      <span>Renew</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenCheckOutModal(bed)}
+                                      className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition"
+                                    >
+                                      <LogOut className="w-3.5 h-3.5" />
+                                      <span>Check-Out</span>
+                                    </button>
+                                  </div>
+                                </>
                               ) : (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                                  Available
-                                </span>
+                                <div className="space-y-2">
+                                  <p className="text-[11px] text-emerald-700 font-medium">
+                                    Vacant berth ready for instant student registration and fee plan billing.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBed(bed);
+                                      if (plans.length > 0 && !selectedPlanId) {
+                                        setSelectedPlanId(plans[0].id);
+                                        setCustomRentAmount(plans[0].base_amount);
+                                        setDepositAmount(plans[0].deposit_amount);
+                                        updateEndDateForFrequency(plans[0].billing_frequency);
+                                      }
+                                      setShowAllocateModal(true);
+                                    }}
+                                    className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center justify-center space-x-1"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Allocate Bed</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
+                          );
+                        };
 
-                            {isOccupied ? (
-                              <>
-                                {/* Occupant Details Card */}
-                                <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1.5">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-slate-500">Student:</span>
-                                    <span className="font-bold text-slate-900">{bed.occupant_name}</span>
-                                  </div>
-                                  <div className="flex justify-between items-center text-[10px]">
-                                    <span className="text-slate-500">Roll/Code:</span>
-                                    <span className="font-mono font-bold text-emerald-700">{bed.occupant_code}</span>
-                                  </div>
-                                  <div className="flex justify-between items-center pt-1 border-t border-slate-100">
-                                    <span className="text-slate-500">Plan:</span>
-                                    <span className="font-semibold text-slate-800">
-                                      {bed.plan_name || 'Hostel Boarding'}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-slate-500">Tariff:</span>
-                                    <span className="font-bold text-slate-900">
-                                      ₹{Number(bed.unit_price || 0).toLocaleString('en-IN')}/
-                                      {bed.billing_frequency?.toLowerCase().replace('_', ' ') || 'mo'}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-slate-500">Caution Deposit:</span>
-                                    <span className="font-bold text-blue-700">
-                                      ₹{Number(bed.deposit_amount || 0).toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-                                  {bed.allocation_end_date && (
-                                    <div className="flex justify-between items-center text-[10px] pt-1 border-t border-slate-100">
-                                      <span className="text-slate-500">Valid Through:</span>
-                                      <span className="font-semibold text-slate-700">{bed.allocation_end_date}</span>
-                                    </div>
-                                  )}
+                        return Object.keys(bunksMap).map((grpKey) => {
+                          const grpNum = Number(grpKey);
+                          const bunk = bunksMap[grpNum];
+
+                          if (bunk.single) {
+                            return renderBedBay(bunk.single, 'SINGLE');
+                          }
+
+                          const isBunkDeletable =
+                            isAdmin &&
+                            (!bunk.upper || bunk.upper.status !== 'OCCUPIED') &&
+                            (!bunk.lower || bunk.lower.status !== 'OCCUPIED');
+
+                          return (
+                            <div key={grpNum} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+                              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                                <div className="flex items-center space-x-2">
+                                  <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                                  <span className="font-bold text-xs text-slate-800">
+                                    Bunk {grpNum} <span className="text-[11px] font-normal text-slate-500">(Double Berth • 2 Beds)</span>
+                                  </span>
                                 </div>
-
-                                {/* Actions */}
-                                <div className="flex items-center space-x-2 pt-1">
+                                {isBunkDeletable && (
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenRenewModal(bed)}
-                                    className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                                    onClick={() => handleDeleteBunk(selectedRoom.id, grpNum, selectedRoom.room_number)}
+                                    disabled={actionLoading}
+                                    className="text-[11px] text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-lg font-semibold transition flex items-center space-x-1 border border-rose-200/60"
+                                    title={`Delete Bunk ${grpNum} (removes both Upper & Lower berths)`}
                                   >
-                                    <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
-                                    <span>Renew</span>
+                                    <Trash2 className="w-3 h-3 text-rose-500" />
+                                    <span>Delete Bunk</span>
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenCheckOutModal(bed)}
-                                    className="flex-1 flex items-center justify-center space-x-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition"
-                                  >
-                                    <LogOut className="w-3.5 h-3.5" />
-                                    <span>Check-Out</span>
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="space-y-2">
-                                <p className="text-[11px] text-emerald-700 font-medium">
-                                  Vacant bed ready for instant student registration and fee plan billing.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedBed(bed);
-                                    if (plans.length > 0 && !selectedPlanId) {
-                                      setSelectedPlanId(plans[0].id);
-                                      setCustomRentAmount(plans[0].base_amount);
-                                      setDepositAmount(plans[0].deposit_amount);
-                                      updateEndDateForFrequency(plans[0].billing_frequency);
-                                    }
-                                    setShowAllocateModal(true);
-                                  }}
-                                  className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center justify-center space-x-1"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  <span>Allocate Bed</span>
-                                </button>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+
+                              {bunk.upper && renderBedBay(bunk.upper, 'UPPER')}
+                              {bunk.lower && renderBedBay(bunk.lower, 'LOWER')}
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2226,24 +2328,26 @@ export const HostelManagement: React.FC = () => {
                       setRoomType(t);
                       if (t === 'SINGLE') setRoomCapacity(1);
                       else if (t === 'DOUBLE') setRoomCapacity(2);
-                      else if (t === 'TRIPLE') setRoomCapacity(3);
-                      else if (t === 'DORMITORY') setRoomCapacity(4);
+                      else if (t === 'DORMITORY_4' || t === 'DORMITORY') setRoomCapacity(4);
+                      else if (t === 'DORMITORY_6') setRoomCapacity(6);
+                      else if (t === 'DORMITORY_8') setRoomCapacity(8);
                     }}
                     className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 focus:bg-white"
                   >
-                    <option value="SINGLE">Single Sharing (1 Bed)</option>
-                    <option value="DOUBLE">Double Sharing (2 Beds)</option>
-                    <option value="TRIPLE">Triple Sharing (3 Beds)</option>
-                    <option value="DORMITORY">Dormitory (4+ Beds)</option>
+                    <option value="DOUBLE">Double Sharing (1 Bunk Bed • 2 Berths)</option>
+                    <option value="DORMITORY_4">4-Bed Sharing (2 Bunk Beds • 4 Berths)</option>
+                    <option value="DORMITORY_6">6-Bed Dormitory (3 Bunk Beds • 6 Berths)</option>
+                    <option value="DORMITORY_8">8-Bed Dormitory (4 Bunk Beds • 8 Berths)</option>
+                    <option value="SINGLE">Single Sharing (1 Single Bed)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Capacity (Beds) *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Capacity (Berths) *</label>
                   <input
                     type="number"
                     min="1"
-                    max="10"
+                    max="16"
                     required
                     value={roomCapacity}
                     onChange={(e) => setRoomCapacity(parseInt(e.target.value) || 1)}
@@ -2272,7 +2376,7 @@ export const HostelManagement: React.FC = () => {
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200">
-                  <span className="font-semibold text-indigo-900">Auto-Provision Beds (Bed A, Bed B, ...)</span>
+                  <span className="font-semibold text-indigo-900">Auto-Provision Bunk Beds (Lower + Upper Berths)</span>
                   <input
                     type="checkbox"
                     checked={autoCreateBeds}

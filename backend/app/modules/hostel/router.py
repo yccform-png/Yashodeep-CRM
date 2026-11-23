@@ -528,8 +528,13 @@ async def create_hostel_room(
                 b_grp = (i // 2) + 1
                 b_tier = "LOWER" if i % 2 == 0 else "UPPER"
                 suffix = "L" if b_tier == "LOWER" else "U"
-                bed_number = f"{data.room_number}-B{b_grp}-{suffix}"
-                bed_label = f"Bunk {b_grp} - {'Lower Berth' if b_tier == 'LOWER' else 'Upper Berth'}"
+                if b_grp == 1:
+                    bed_number = f"{data.room_number}-{suffix}"
+                    bed_label = "Lower Berth" if b_tier == "LOWER" else "Upper Berth"
+                else:
+                    bed_number = f"{data.room_number}-B{b_grp}-{suffix}"
+                    bed_label = f"Bunk {b_grp} - {'Lower Berth' if b_tier == 'LOWER' else 'Upper Berth'}"
+
                 bed = HostelBed(
                     room_id=room.id,
                     bed_number=bed_number,
@@ -638,6 +643,157 @@ async def delete_hostel_room(
     await cache_service.delete_pattern(CacheKeys.hostel_pattern())
     await cache_service.delete(CacheKeys.dashboard_metrics())
     return {"message": f"Room {room.room_number} and its vacant beds were deleted successfully"}
+
+
+@router.post("/rooms/{room_id}/bunks", response_model=List[HostelBedResponse], status_code=status.HTTP_201_CREATED)
+async def create_hostel_bunk_unit(
+    room_id: uuid.UUID,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Atomically adds a complete 2-tier Bunk Bed unit (both Lower Berth and Upper Berth)
+    to the room, incrementing capacity by +2 positions.
+    """
+    stmt = select(HostelRoom).options(selectinload(HostelRoom.beds)).where(HostelRoom.id == room_id)
+    room = (await db.execute(stmt)).scalar_one_or_none()
+    if not room:
+        raise NotFoundException("Hostel room not found")
+
+    import re
+    # Determine all occupied bunk group slots in this room
+    existing_bunks = {b.bunk_group for b in room.beds if b.bunk_group is not None}
+    if any(b.bed_number.endswith("-L") and "-B" not in b.bed_number for b in room.beds):
+        existing_bunks.add(1)
+    for b in room.beds:
+        m = re.search(r'-B(\d+)-', b.bed_number)
+        if m:
+            existing_bunks.add(int(m.group(1)))
+
+    next_bunk = 1
+    while next_bunk in existing_bunks:
+        next_bunk += 1
+
+    # Numbering: Bunk 1 gets 101-L and 101-U; Bunk 2+ gets 101-B2-L and 101-B2-U
+    if next_bunk == 1:
+        lower_num = f"{room.room_number}-L"
+        upper_num = f"{room.room_number}-U"
+        lower_label = "Lower Berth"
+        upper_label = "Upper Berth"
+    else:
+        lower_num = f"{room.room_number}-B{next_bunk}-L"
+        upper_num = f"{room.room_number}-B{next_bunk}-U"
+        lower_label = f"Bunk {next_bunk} - Lower Berth"
+        upper_label = f"Bunk {next_bunk} - Upper Berth"
+
+    lower_bed = HostelBed(
+        room_id=room.id,
+        bed_number=lower_num,
+        bed_label=lower_label,
+        tier="LOWER",
+        bunk_group=next_bunk,
+        status="AVAILABLE",
+        is_active=True
+    )
+    upper_bed = HostelBed(
+        room_id=room.id,
+        bed_number=upper_num,
+        bed_label=upper_label,
+        tier="UPPER",
+        bunk_group=next_bunk,
+        status="AVAILABLE",
+        is_active=True
+    )
+
+    db.add(lower_bed)
+    db.add(upper_bed)
+    room.beds.append(lower_bed)
+    room.beds.append(upper_bed)
+    room.capacity = len(room.beds)
+    if room.capacity > 2:
+        room.room_type = "DORMITORY"
+    elif room.capacity == 2:
+        room.room_type = "DOUBLE"
+
+    await db.commit()
+    await db.refresh(room)
+    await db.refresh(lower_bed)
+    await db.refresh(upper_bed)
+    await cache_service.delete_pattern(CacheKeys.hostel_pattern())
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+
+    return [
+        HostelBedResponse(
+            id=lower_bed.id,
+            room_id=lower_bed.room_id,
+            bed_number=lower_bed.bed_number,
+            bed_label=lower_bed.bed_label,
+            tier=lower_bed.tier,
+            bunk_group=lower_bed.bunk_group,
+            status=lower_bed.status
+        ),
+        HostelBedResponse(
+            id=upper_bed.id,
+            room_id=upper_bed.room_id,
+            bed_number=upper_bed.bed_number,
+            bed_label=upper_bed.bed_label,
+            tier=upper_bed.tier,
+            bunk_group=upper_bed.bunk_group,
+            status=upper_bed.status
+        )
+    ]
+
+
+@router.delete("/rooms/{room_id}/bunks/{bunk_group}")
+async def delete_hostel_bunk_unit(
+    room_id: uuid.UUID,
+    bunk_group: int,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Atomically deletes an entire 2-tier Bunk Bed unit (both berths) if neither
+    is occupied, decrementing room capacity by 2.
+    """
+    stmt = select(HostelRoom).options(selectinload(HostelRoom.beds)).where(HostelRoom.id == room_id)
+    room = (await db.execute(stmt)).scalar_one_or_none()
+    if not room:
+        raise NotFoundException("Hostel room not found")
+
+    # Match beds by bunk_group or fallback to bed naming convention
+    bunk_beds = [b for b in room.beds if b.bunk_group == bunk_group]
+    if not bunk_beds:
+        if bunk_group == 1:
+            bunk_beds = [b for b in room.beds if b.bed_number in [f"{room.room_number}-L", f"{room.room_number}-U"]]
+        else:
+            bunk_beds = [b for b in room.beds if f"-B{bunk_group}-" in b.bed_number]
+
+    if not bunk_beds:
+        raise NotFoundException(f"Bunk {bunk_group} not found in this room")
+
+    occupied = [b for b in bunk_beds if b.status == "OCCUPIED"]
+    if occupied:
+        occ_names = ", ".join(b.occupant_name or b.bed_number for b in occupied)
+        raise BadRequestException(f"Cannot delete Bunk {bunk_group}: occupied by {occ_names}. Vacate occupant(s) first.")
+
+    for b in bunk_beds:
+        if b in room.beds:
+            room.beds.remove(b)
+        await db.delete(b)
+
+    room.capacity = max(0, len(room.beds))
+    if room.capacity > 2:
+        room.room_type = "DORMITORY"
+    elif room.capacity == 2:
+        room.room_type = "DOUBLE"
+    elif room.capacity == 1:
+        room.room_type = "SINGLE"
+
+    await db.commit()
+    await db.refresh(room)
+    await cache_service.delete_pattern(CacheKeys.hostel_pattern())
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+    return {"message": f"Bunk {bunk_group} and its {len(bunk_beds)} berths deleted successfully"}
 
 
 @router.post("/rooms/{room_id}/beds", response_model=HostelBedResponse, status_code=status.HTTP_201_CREATED)
