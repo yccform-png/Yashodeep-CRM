@@ -47,11 +47,12 @@ export const Login: React.FC = () => {
 
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-8 relative z-10">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 mx-auto mb-4 shadow-xl shadow-emerald-500/20">
-            <Building2 className="w-8 h-8" />
+          <div className="w-20 h-20 rounded-2xl bg-white/95 p-2 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-amber-500/10 border border-slate-700/60">
+            <img src="/logo.png" alt="Yashodeep Classes" className="w-full h-full object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Yashodeep Coaching Classes</h2>
-          <p className="text-xs text-slate-400 mt-1">Unified Coaching & Residential ERP Platform</p>
+          <p className="text-sm font-semibold text-amber-400 mt-1">यशोदिप क्लासेस</p>
+          <p className="text-xs text-slate-400 mt-0.5">Unified Coaching & Residential ERP Platform</p>
         </div>
 
         {isSessionExpired && (

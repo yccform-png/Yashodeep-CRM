@@ -72,16 +72,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
         }`}
       >
         {/* Brand Logo Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-900 font-bold shadow-lg shadow-emerald-500/20 shrink-0">
-              <Building2 className="w-6 h-6 text-slate-950" />
+            <div className="w-11 h-11 rounded-xl bg-white/95 p-1 flex items-center justify-center shrink-0 shadow-md border border-slate-700/60">
+              <img src="/logo.png" alt="Yashodeep Classes" className="w-full h-full object-contain" />
             </div>
             <div className="truncate">
               <h1 className="font-bold text-sm tracking-tight text-white truncate max-w-[150px]" title={institute?.name || 'Yashodeep Coaching Classes'}>
-                {institute?.name ? institute.name.toUpperCase() : 'Yashodeep Coaching Classes'}
+                {institute?.name ? institute.name.toUpperCase() : 'YASHODEEP CLASSES'}
               </h1>
-              <p className="text-[11px] text-emerald-400 font-medium">Enterprise ERP</p>
+              <p className="text-[11px] text-amber-400 font-semibold truncate">यशोदिप क्लासेस ERP</p>
             </div>
           </div>
 
