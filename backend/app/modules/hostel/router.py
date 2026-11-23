@@ -21,7 +21,7 @@ from app.models.hostel import (
 from app.modules.hostel.schemas import (
     HostelResponse, HostelBuildingResponse, HostelFloorResponse,
     HostelRoomResponse, HostelBedResponse, BedAllocationRequest,
-    BedRenewalRequest, BedCheckOutRequest,
+    BedRenewalRequest, BedCheckOutRequest, BedTransferRequest,
     HostelVisitorCreate, HostelMaintenanceCreate,
     HostelFloorCreate, HostelRoomCreate, HostelRoomUpdate, HostelBedCreate
 )
@@ -32,6 +32,11 @@ from app.modules.services.service_billing import (
 )
 
 router = APIRouter(prefix="/hostels", tags=["Hostel"])
+
+
+def natural_sort_key(s: str):
+    import re
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s or '')]
 
 
 @router.get("", response_model=List[HostelResponse])
@@ -66,11 +71,14 @@ async def list_hostels(db: AsyncSession = Depends(get_db)):
         b_list = []
         for b in h.buildings:
             f_list = []
-            for f in b.floors:
+            sorted_floors = sorted(b.floors, key=lambda f: f.floor_number)
+            for f in sorted_floors:
                 r_list = []
-                for r in f.rooms:
+                sorted_rooms = sorted(f.rooms, key=lambda r: natural_sort_key(r.room_number))
+                for r in sorted_rooms:
                     beds_out = []
-                    for bed in r.beds:
+                    sorted_beds = sorted(r.beds, key=lambda bd: (bd.bunk_group or 0, natural_sort_key(bd.bed_number)))
+                    for bed in sorted_beds:
                         active_alloc = next((a for a in bed.allocations if a.status == "ACTIVE"), None)
                         occ_name = None
                         occ_code = None
@@ -337,6 +345,170 @@ async def check_out_bed(
         "deposit_amount": float(total_deposit),
         "damage_deduction": float(deduction),
         "refund_amount": float(net_refund)
+    }
+
+
+@router.post("/transfer")
+async def transfer_bed(
+    data: BedTransferRequest,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Transfers an active resident student from their current bed to a new bed
+    (within the same room, to a new room on the same floor, or to another floor).
+    """
+    stmt_alloc = (
+        select(BedAllocation)
+        .options(
+            selectinload(BedAllocation.hostel_bed).selectinload(HostelBed.room),
+            selectinload(BedAllocation.student),
+            selectinload(BedAllocation.student_service)
+        )
+        .where(BedAllocation.id == data.current_allocation_id)
+    )
+    old_alloc = (await db.execute(stmt_alloc)).scalar_one_or_none()
+    if not old_alloc or old_alloc.status != "ACTIVE":
+        raise NotFoundException("Active bed allocation not found")
+
+    student = old_alloc.student
+    old_bed = old_alloc.hostel_bed
+    if not old_bed or not student:
+        raise NotFoundException("Associated bed or student record not found")
+
+    # Lock and validate target new bed
+    new_bed_stmt = (
+        select(HostelBed)
+        .options(selectinload(HostelBed.room))
+        .where(HostelBed.id == data.new_hostel_bed_id)
+        .with_for_update()
+    )
+    new_bed = (await db.execute(new_bed_stmt)).scalar_one_or_none()
+    if not new_bed:
+        raise NotFoundException("Target bed not found")
+    if new_bed.status != "AVAILABLE":
+        raise ConflictException(f"Target bed '{new_bed.bed_label or new_bed.bed_number}' is not available")
+
+    if new_bed.id == old_bed.id:
+        raise BadRequestException("Target bed must be different from current bed")
+
+    today = date.today()
+
+    # 1. Vacate old bed & mark allocation as TRANSFERRED
+    old_alloc.status = "TRANSFERRED"
+    old_alloc.check_out_date = today
+    old_room_num = old_bed.room.room_number if old_bed.room else ""
+    new_room_num = new_bed.room.room_number if new_bed.room else ""
+    transfer_note = f"[Transferred to Bed {new_bed.bed_number} (Room {new_room_num}) on {today}]"
+    old_alloc.remarks = f"{old_alloc.remarks or ''} {transfer_note}".strip()
+    old_bed.status = "AVAILABLE"
+
+    # 2. Occupy new bed & create active new allocation
+    new_bed.status = "OCCUPIED"
+    new_remarks = data.remarks or f"Transferred from Bed {old_bed.bed_number} (Room {old_room_num})"
+    new_alloc = BedAllocation(
+        hostel_bed_id=new_bed.id,
+        student_id=student.id,
+        student_service_id=old_alloc.student_service_id,
+        start_date=today,
+        end_date=old_alloc.end_date,
+        check_in_date=today,
+        deposit_amount=old_alloc.deposit_amount,
+        status="ACTIVE",
+        allocated_by_user_id=current_user.id,
+        remarks=new_remarks
+    )
+    db.add(new_alloc)
+
+    # 3. Update student service remark
+    if old_alloc.student_service:
+        old_alloc.student_service.remarks = f"Hostel Bed {new_bed.bed_number} (Transferred from {old_bed.bed_number})"
+
+    await db.commit()
+    await cache_service.delete_pattern(CacheKeys.hostel_pattern())
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+    if student.id:
+        await cache_service.delete(CacheKeys.student_profile(student.id))
+
+    is_same_room = old_room_num == new_room_num
+    loc_phrase = f"within Room {old_room_num}" if is_same_room else f"from Room {old_room_num} to Room {new_room_num}"
+
+    return {
+        "message": f"Successfully transferred {student.first_name} {student.last_name} {loc_phrase} (Bed {old_bed.bed_number} → Bed {new_bed.bed_number})",
+        "new_allocation_id": str(new_alloc.id),
+        "old_bed_number": old_bed.bed_number,
+        "new_bed_number": new_bed.bed_number,
+        "is_same_room": is_same_room
+    }
+
+
+@router.post("/rooms/{target_room_id}/transfer-bunk")
+async def transfer_bunk_to_room(
+    target_room_id: uuid.UUID,
+    source_room_id: uuid.UUID,
+    bunk_group: int,
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Transfers an entire vacant 2-tier bunk bed unit from a source room to a target room.
+    Decrements source room capacity by 2 and increments target room capacity by 2.
+    """
+    stmt_src = select(HostelRoom).options(selectinload(HostelRoom.beds)).where(HostelRoom.id == source_room_id)
+    source_room = (await db.execute(stmt_src)).scalar_one_or_none()
+    if not source_room:
+        raise NotFoundException("Source room not found")
+
+    stmt_tgt = select(HostelRoom).options(selectinload(HostelRoom.beds)).where(HostelRoom.id == target_room_id)
+    target_room = (await db.execute(stmt_tgt)).scalar_one_or_none()
+    if not target_room:
+        raise NotFoundException("Target room not found")
+
+    bunk_beds = [b for b in source_room.beds if b.bunk_group == bunk_group]
+    if not bunk_beds:
+        raise NotFoundException(f"Bunk {bunk_group} not found in Room {source_room.room_number}")
+
+    if any(b.status == "OCCUPIED" for b in bunk_beds):
+        raise BadRequestException(f"Cannot transfer Bunk {bunk_group}: contains active occupants. Vacate or transfer occupants first.")
+
+    # Determine next bunk group in target room
+    tgt_bunks = {b.bunk_group for b in target_room.beds if b.bunk_group is not None}
+    next_tgt_bunk = 1
+    while next_tgt_bunk in tgt_bunks:
+        next_tgt_bunk += 1
+
+    # Move beds to target room and rename according to target room convention
+    for bed in bunk_beds:
+        bed.room_id = target_room.id
+        bed.bunk_group = next_tgt_bunk
+        if next_tgt_bunk == 1:
+            bed.bed_number = f"{target_room.room_number}-{'L' if bed.tier == 'LOWER' else 'U'}"
+            bed.bed_label = "Lower Berth" if bed.tier == "LOWER" else "Upper Berth"
+        else:
+            bed.bed_number = f"{target_room.room_number}-B{next_tgt_bunk}-{'L' if bed.tier == 'LOWER' else 'U'}"
+            bed.bed_label = f"Bunk {next_tgt_bunk} - {'Lower Berth' if bed.tier == 'LOWER' else 'Upper Berth'}"
+
+    # Adjust capacities
+    source_room.capacity = max(0, len(source_room.beds) - len(bunk_beds))
+    if source_room.capacity > 2:
+        source_room.room_type = "DORMITORY"
+    elif source_room.capacity == 2:
+        source_room.room_type = "DOUBLE"
+    elif source_room.capacity == 1:
+        source_room.room_type = "SINGLE"
+
+    target_room.capacity = len(target_room.beds) + len(bunk_beds)
+    if target_room.capacity > 2:
+        target_room.room_type = "DORMITORY"
+    elif target_room.capacity == 2:
+        target_room.room_type = "DOUBLE"
+
+    await db.commit()
+    await cache_service.delete_pattern(CacheKeys.hostel_pattern())
+    await cache_service.delete(CacheKeys.dashboard_metrics())
+
+    return {
+        "message": f"Successfully transferred Bunk {bunk_group} from Room {source_room.room_number} to Room {target_room.room_number} as Bunk {next_tgt_bunk} (+2 capacity)"
     }
 
 

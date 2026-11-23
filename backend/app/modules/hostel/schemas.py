@@ -99,6 +99,12 @@ class BedCheckOutRequest(BaseModel):
     remarks: Optional[str] = None
 
 
+class BedTransferRequest(BaseModel):
+    current_allocation_id: uuid.UUID
+    new_hostel_bed_id: uuid.UUID
+    remarks: Optional[str] = None
+
+
 class HostelVisitorCreate(BaseModel):
     student_id: uuid.UUID
     visitor_name: str

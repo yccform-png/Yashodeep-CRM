@@ -69,23 +69,27 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
   // Filtered Rooms on current floor
   const displayRooms = useMemo(() => {
     if (!currentFloor || !currentFloor.rooms) return [];
-    return currentFloor.rooms.filter((r: any) => {
-      const hasVacancy = r.beds.some((b: any) => b.status === 'AVAILABLE');
-      if (roomFilter === 'VACANT' && !hasVacancy) return false;
-      if (roomFilter === 'AC' && !r.is_ac) return false;
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
-        const matchesRoom = r.room_number.toLowerCase().includes(q);
-        const matchesOccupant = r.beds.some(
-          (b: any) =>
-            (b.occupant_name && b.occupant_name.toLowerCase().includes(q)) ||
-            (b.occupant_code && b.occupant_code.toLowerCase().includes(q)) ||
-            (b.bed_number && b.bed_number.toLowerCase().includes(q))
-        );
-        if (!matchesRoom && !matchesOccupant) return false;
-      }
-      return true;
-    });
+    return currentFloor.rooms
+      .filter((r: any) => {
+        const hasVacancy = r.beds.some((b: any) => b.status === 'AVAILABLE');
+        if (roomFilter === 'VACANT' && !hasVacancy) return false;
+        if (roomFilter === 'AC' && !r.is_ac) return false;
+        if (searchTerm) {
+          const q = searchTerm.toLowerCase();
+          const matchesRoom = r.room_number.toLowerCase().includes(q);
+          const matchesOccupant = r.beds.some(
+            (b: any) =>
+              (b.occupant_name && b.occupant_name.toLowerCase().includes(q)) ||
+              (b.occupant_code && b.occupant_code.toLowerCase().includes(q)) ||
+              (b.bed_number && b.bed_number.toLowerCase().includes(q))
+          );
+          if (!matchesRoom && !matchesOccupant) return false;
+        }
+        return true;
+      })
+      .sort((a: any, b: any) =>
+        a.room_number.localeCompare(b.room_number, undefined, { numeric: true, sensitivity: 'base' })
+      );
   }, [currentFloor, roomFilter, searchTerm]);
 
   // Find currently selected bed and its room details

@@ -129,36 +129,36 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
             : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
         }`}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-1.5">
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center space-x-1 shrink-0 whitespace-nowrap">
             {tierType === 'UPPER' ? (
-              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-800 border border-blue-200/60">
+              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-800 border border-blue-200/60 shrink-0">
                 <ArrowUp className="w-2.5 h-2.5 mr-0.5 text-blue-600 stroke-[3]" />
                 Upper
               </span>
             ) : (
-              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 border border-amber-200/60">
+              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 border border-amber-200/60 shrink-0">
                 <ArrowDown className="w-2.5 h-2.5 mr-0.5 text-amber-700 stroke-[3]" />
                 Lower
               </span>
             )}
-            <span className="font-mono font-bold text-xs text-slate-900">{bed.bed_number}</span>
+            <span className="font-mono font-bold text-xs text-slate-900 whitespace-nowrap tracking-tight">{bed.bed_number}</span>
           </div>
 
-          <div>
+          <div className="shrink-0 whitespace-nowrap">
             {isSelected ? (
-              <span className="inline-flex items-center text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-full">
+              <span className="inline-flex items-center text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-full whitespace-nowrap">
                 <CheckCircle2 className="w-3 h-3 mr-0.5 text-indigo-600" />
                 Selected
               </span>
             ) : isOccupied ? (
               daysRemaining !== null && showSubscriptionDetails && (
-                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-200/80 text-rose-900">
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-200/80 text-rose-900 whitespace-nowrap">
                   {daysRemaining}d
                 </span>
               )
             ) : (
-              <span className="text-[10px] font-bold text-emerald-700">● Available</span>
+              <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">● Available</span>
             )}
           </div>
         </div>
