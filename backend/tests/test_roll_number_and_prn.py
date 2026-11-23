@@ -176,10 +176,10 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
 
         roster_a = gen_a_data["roster"]
         assert len(roster_a) == 2
-        # Agarwal < Deshmukh alphabetically by last name
-        assert roster_a[0]["last_name"] == "Agarwal"
+        # Chronological append: Deshmukh enrolled first (1001), Agarwal enrolled second (1002)
+        assert roster_a[0]["last_name"] == "Deshmukh"
         assert roster_a[0]["roll_number"] == 1001
-        assert roster_a[1]["last_name"] == "Deshmukh"
+        assert roster_a[1]["last_name"] == "Agarwal"
         assert roster_a[1]["roll_number"] == 1002
 
         # 7. Test Division B roll numbers (+50 offset: 1051, 1052...)
@@ -231,10 +231,10 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
         assert gen_b_data["division_offset"] == 50
         roster_b = gen_b_data["roster"]
         assert len(roster_b) == 2
-        # Joshi < Kulkarni
-        assert roster_b[0]["last_name"] == "Joshi"
+        # Chronological append: Kulkarni enrolled first (1051), Joshi enrolled second (1052)
+        assert roster_b[0]["last_name"] == "Kulkarni"
         assert roster_b[0]["roll_number"] == 1051
-        assert roster_b[1]["last_name"] == "Kulkarni"
+        assert roster_b[1]["last_name"] == "Joshi"
         assert roster_b[1]["roll_number"] == 1052
 
         # 8. Test 5th Standard batch (Base = 500 -> 501, 502)
@@ -289,11 +289,11 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
         assert gen_5_data["roster"][0]["roll_number"] == 501
 
         # 9. Test Manual Override & Duplicate Prevention
-        # Try to set student A's roll number to 1001 (which is already assigned to student B in Batch A)
+        # Try to set student A's roll number to 1002 (which is already assigned to student B in Batch A)
         dup_resp = await client.put(
             f"/api/v1/academics/batches/{batch_a['id']}/students/{stu_a_data['id']}/roll-number",
             headers=auth_headers,
-            json={"roll_number": 1001}
+            json={"roll_number": 1002}
         )
         assert dup_resp.status_code == 409  # Conflict!
 
@@ -314,8 +314,8 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
         assert roster_final.status_code == 200
         r_items = roster_final.json()
         assert len(r_items) == 2
-        # Ordered by roll_number: 1001, then 1005
-        assert r_items[0]["roll_number"] == 1001
+        # Ordered by roll_number: 1002 (Bhavna), then 1005 (Aarav overridden)
+        assert r_items[0]["roll_number"] == 1002
         assert r_items[1]["roll_number"] == 1005
 
     finally:
