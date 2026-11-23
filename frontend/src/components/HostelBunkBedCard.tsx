@@ -119,7 +119,7 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
         onClick={() => {
           if (canClick && onSelectBed) onSelectBed(bed);
         }}
-        className={`p-2.5 rounded-xl border transition-all text-left relative ${
+        className={`px-2 py-1.5 rounded-xl border transition-all text-left relative ${
           isSelected
             ? 'bg-indigo-50/90 border-indigo-600 ring-2 ring-indigo-500/20 shadow-sm z-10'
             : isOccupied
@@ -129,36 +129,43 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
             : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
         }`}
       >
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center space-x-1 shrink-0 whitespace-nowrap">
+        <div className="flex items-center justify-between gap-1 min-w-0">
+          <div className="flex items-center space-x-1 min-w-0 shrink">
             {tierType === 'UPPER' ? (
-              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-800 border border-blue-200/60 shrink-0">
+              <span className="inline-flex items-center text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-800 border border-blue-200/60 shrink-0">
                 <ArrowUp className="w-2.5 h-2.5 mr-0.5 text-blue-600 stroke-[3]" />
                 Upper
               </span>
             ) : (
-              <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 border border-amber-200/60 shrink-0">
+              <span className="inline-flex items-center text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-900 border border-amber-200/60 shrink-0">
                 <ArrowDown className="w-2.5 h-2.5 mr-0.5 text-amber-700 stroke-[3]" />
                 Lower
               </span>
             )}
-            <span className="font-mono font-bold text-xs text-slate-900 whitespace-nowrap tracking-tight">{bed.bed_number}</span>
+            <span className="font-mono font-bold text-[11px] text-slate-900 truncate tracking-tight">{bed.bed_number}</span>
           </div>
 
-          <div className="shrink-0 whitespace-nowrap">
+          <div className="shrink-0 flex items-center">
             {isSelected ? (
-              <span className="inline-flex items-center text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-full whitespace-nowrap">
+              <span className="inline-flex items-center text-[9.5px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-full whitespace-nowrap">
                 <CheckCircle2 className="w-3 h-3 mr-0.5 text-indigo-600" />
                 Selected
               </span>
             ) : isOccupied ? (
-              daysRemaining !== null && showSubscriptionDetails && (
+              daysRemaining !== null && showSubscriptionDetails ? (
                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-200/80 text-rose-900 whitespace-nowrap">
                   {daysRemaining}d
                 </span>
+              ) : (
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-800 whitespace-nowrap">
+                  Occupied
+                </span>
               )
             ) : (
-              <span className="text-[10px] font-bold text-emerald-700 whitespace-nowrap">● Available</span>
+              <span className="inline-flex items-center text-[9.5px] font-bold text-emerald-700 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 shrink-0" />
+                Available
+              </span>
             )}
           </div>
         </div>
@@ -175,9 +182,9 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
               </p>
             </div>
           ) : (
-            <div className="text-[10px] text-slate-500 flex items-center justify-between">
-              <span>{canClick ? 'Click to assign this berth' : 'Vacant Berth'}</span>
-              <Bed className="w-3 h-3 text-emerald-500 opacity-60" />
+            <div className="text-[10px] text-slate-500 flex items-center justify-between gap-1 min-w-0">
+              <span className="truncate">{canClick ? 'Click to assign this berth' : 'Vacant Berth'}</span>
+              <Bed className="w-3 h-3 text-emerald-500 opacity-60 shrink-0" />
             </div>
           )}
         </div>
@@ -186,9 +193,9 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
   };
 
   return (
-    <div className="relative rounded-2xl border border-slate-200 bg-white/60 p-2 shadow-2xs hover:border-slate-300 transition-all">
+    <div className="relative rounded-2xl border border-slate-200 bg-white/60 p-1.5 shadow-2xs hover:border-slate-300 transition-all">
       {/* Bunk Unit Header */}
-      <div className="flex items-center justify-between px-1 pb-1.5 mb-1.5 border-b border-slate-100 text-[11px]">
+      <div className="flex items-center justify-between px-1 pb-1 mb-1 border-b border-slate-100 text-[11px]">
         <span className="font-bold text-slate-700 flex items-center space-x-1">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
           <span>Bunk {bunkNumber}</span>
@@ -213,17 +220,17 @@ export const HostelBunkBedCard: React.FC<HostelBunkBedCardProps> = ({
       </div>
 
       {/* Frame Container with stylized left ladder */}
-      <div className="relative pl-6 space-y-1.5">
+      <div className="relative pl-4 space-y-1">
         {/* Stylized Vertical Ladder Rail */}
         <div
-          className="absolute left-1.5 top-1 bottom-1 w-2.5 flex flex-col justify-between items-center pointer-events-none select-none"
+          className="absolute left-0.5 top-0.5 bottom-0.5 w-2 flex flex-col justify-between items-center pointer-events-none select-none"
           title="Bunk Ladder"
         >
           <div className="w-full border-b-2 border-slate-300" />
           <div className="h-full w-0.5 bg-slate-300 relative flex flex-col justify-around items-center">
-            <div className="w-3 h-0.5 bg-slate-400 rounded" />
-            <div className="w-3 h-0.5 bg-slate-400 rounded" />
-            <div className="w-3 h-0.5 bg-slate-400 rounded" />
+            <div className="w-2.5 h-0.5 bg-slate-400 rounded" />
+            <div className="w-2.5 h-0.5 bg-slate-400 rounded" />
+            <div className="w-2.5 h-0.5 bg-slate-400 rounded" />
           </div>
           <div className="w-full border-t-2 border-slate-300" />
         </div>

@@ -404,7 +404,7 @@ export const HostelPhysicalFloorMap: React.FC<HostelPhysicalFloorMapProps> = ({
                       compact={compact}
                     />
                   ) : (
-                    <div className={`grid gap-2.5 ${Object.keys(bunksMap).length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[480px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                    <div className={`grid gap-1.5 ${Object.keys(bunksMap).length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[480px] overflow-y-auto overflow-x-hidden pr-1' : 'grid-cols-1'}`}>
                       {Object.keys(bunksMap).map((grpKey) => {
                         const grpNum = Number(grpKey);
                         const bunk = bunksMap[grpNum];

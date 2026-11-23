@@ -1367,7 +1367,7 @@ export const HostelManagement: React.FC = () => {
 
                                 const bunkKeys = Object.keys(bunksMap);
                                 return (
-                                  <div className={`grid gap-2 ${bunkKeys.length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[460px] overflow-y-auto pr-1' : 'grid-cols-1'}`}>
+                                  <div className={`grid gap-1.5 ${bunkKeys.length > 2 ? 'grid-cols-1 sm:grid-cols-2 max-h-[460px] overflow-y-auto overflow-x-hidden pr-1' : 'grid-cols-1'}`}>
                                     {bunkKeys.map((grpKey) => {
                                       const grpNum = Number(grpKey);
                                       const bunk = bunksMap[grpNum];
