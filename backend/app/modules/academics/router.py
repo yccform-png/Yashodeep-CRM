@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1180,6 +1180,47 @@ def _get_division_offset(division: str) -> int:
     return 0
 
 
+async def get_next_roll_number_for_batch(db: AsyncSession, batch_id: uuid.UUID) -> int:
+    """
+    Computes the next available sequential roll number for a batch.
+    Roll numbers are ALWAYS appended at the end so existing students' roll numbers are NEVER changed or disturbed.
+    Formula:
+      - standard_number = class number (e.g. 5 for 5th, 10 for 10th)
+      - base_prefix = standard_number * 100
+      - division_offset = 0 for Div A, 50 for Div B, 100 for Div C, 150 for Div D
+      - min_roll = base_prefix + division_offset + 1
+      - next_roll = max(existing_max_roll + 1, min_roll)
+    """
+    batch = await db.get(Batch, batch_id)
+    if not batch:
+        return 1
+
+    cls_name = None
+    cls_code = None
+    if batch.course_id:
+        course = await db.get(Course, batch.course_id)
+        if course and course.class_id:
+            cls = await db.get(Class, course.class_id)
+            if cls:
+                cls_name = cls.name
+                cls_code = cls.code
+
+    std_num = _extract_standard_number(cls_name, cls_code)
+    base_prefix = std_num * 100
+    div_offset = _get_division_offset(batch.division)
+    min_roll = base_prefix + div_offset + 1
+
+    max_roll_stmt = select(BatchStudent.roll_number).where(
+        BatchStudent.batch_id == batch_id,
+        BatchStudent.roll_number != None
+    ).order_by(BatchStudent.roll_number.desc()).limit(1)
+    max_roll = (await db.execute(max_roll_stmt)).scalar_one_or_none()
+
+    if max_roll is not None and max_roll >= (base_prefix + div_offset):
+        return max_roll + 1
+    return min_roll
+
+
 @router.get("/batches/{batch_id}/roster", response_model=List[BatchStudentRosterItem])
 async def get_batch_roster(
     batch_id: uuid.UUID,
@@ -1244,21 +1285,24 @@ async def add_student_to_batch(
     if existing:
         raise ConflictException("Student is already enrolled in this batch")
 
-    # Validate roll number if provided
-    if data.roll_number is not None:
-        if data.roll_number <= 0:
+    # Validate roll number if provided, or auto-assign next sequential roll number at the end
+    assigned_roll = data.roll_number
+    if assigned_roll is not None:
+        if assigned_roll <= 0:
             raise BadRequestException("Roll number must be a positive integer")
         dup_stmt = select(BatchStudent).where(
             BatchStudent.batch_id == batch_id,
-            BatchStudent.roll_number == data.roll_number
+            BatchStudent.roll_number == assigned_roll
         )
         if (await db.execute(dup_stmt)).scalar_one_or_none():
-            raise ConflictException(f"Roll number {data.roll_number} is already assigned in this division.")
+            raise ConflictException(f"Roll number {assigned_roll} is already assigned in this division.")
+    else:
+        assigned_roll = await get_next_roll_number_for_batch(db, batch_id)
 
     bs = BatchStudent(
         batch_id=batch_id,
         student_id=data.student_id,
-        roll_number=data.roll_number,
+        roll_number=assigned_roll,
         status="ACTIVE"
     )
     db.add(bs)
@@ -1528,7 +1572,8 @@ async def sync_enrolled_course_students(
     max_roll = (await db.execute(max_roll_stmt)).scalar_one_or_none()
     next_roll = (max_roll + 1) if max_roll and max_roll >= (base_prefix + div_offset) else (base_prefix + div_offset + 1)
 
-    new_additions.sort(key=lambda e: (e.student.last_name.lower(), e.student.first_name.lower()))
+    # Append new enrollments in chronological order of enrollment (not alphabetically) so existing roll numbers are undisturbed
+    new_additions.sort(key=lambda e: (e.created_at or datetime.min))
     for e in new_additions:
         bs = BatchStudent(
             batch_id=batch.id,
@@ -1624,32 +1669,63 @@ async def auto_generate_roll_numbers(
             roster=[]
         )
 
-    # Step 1: Temporarily set roll numbers to None to prevent unique constraint conflicts during reassignment
-    for r in records:
-        r.roll_number = None
-    await db.flush()
+    # Preserve existing roll numbers completely so nobody's roll number is disturbed!
+    assigned_records = [r for r in records if r.roll_number is not None]
+    unassigned_records = [r for r in records if r.roll_number is None]
 
-    # Step 2: Sort alphabetically by student last_name, then first_name
-    records_sorted = sorted(
-        records,
-        key=lambda r: (
-            (r.student.last_name or "").lower(),
-            (r.student.first_name or "").lower()
+    if not unassigned_records:
+        # All students already have roll numbers - strictly preserve them
+        records_sorted = sorted(records, key=lambda r: (r.roll_number or 0))
+        roster_out = [
+            BatchStudentRosterItem(
+                student_id=r.student.id,
+                student_code=r.student.student_code,
+                prn=r.student.prn or r.student.student_code.replace("STU-", "PRN-"),
+                first_name=r.student.first_name,
+                last_name=r.student.last_name,
+                gender=r.student.gender,
+                roll_number=r.roll_number,
+                status=r.status,
+                enrolled_at=r.enrolled_at
+            )
+            for r in records_sorted
+        ]
+        return AutoRollNumberResponse(
+            message=f"All {len(records)} students in Division {batch.division} already have roll numbers. Existing roll numbers are safely preserved.",
+            batch_id=batch.id,
+            division=batch.division,
+            standard_number=std_num,
+            base_prefix=base_prefix,
+            division_offset=div_offset,
+            assigned_count=len(records),
+            roster=roster_out
         )
+
+    # Determine starting roll number for unassigned students (append at the last)
+    existing_rolls = [r.roll_number for r in assigned_records if r.roll_number is not None]
+    if existing_rolls:
+        next_roll = max(existing_rolls) + 1
+    else:
+        next_roll = base_prefix + div_offset + 1
+
+    # Sort unassigned students chronologically by enrollment date (NOT alphabetically) to append at the end
+    unassigned_sorted = sorted(
+        unassigned_records,
+        key=lambda r: (r.created_at or r.enrolled_at or datetime.min)
     )
 
-    # Step 3: Assign class-prefixed roll numbers
-    assigned_count = 0
-    for idx, r in enumerate(records_sorted):
-        new_roll = base_prefix + div_offset + idx + 1
-        r.roll_number = new_roll
-        assigned_count += 1
+    newly_assigned_count = 0
+    for r in unassigned_sorted:
+        r.roll_number = next_roll
+        next_roll += 1
+        newly_assigned_count += 1
 
     await db.commit()
-    affected_student_ids = [r.student.id for r in records_sorted if r.student]
+    affected_student_ids = [r.student.id for r in unassigned_sorted if r.student]
     await CacheInvalidator.invalidate_batch_roster(batch_id=batch.id, student_ids=affected_student_ids)
 
-    # Build response roster
+    # Build response roster ordered by roll number
+    records_sorted = sorted(records, key=lambda r: (r.roll_number or 0))
     roster_out = [
         BatchStudentRosterItem(
             student_id=r.student.id,
@@ -1666,16 +1742,14 @@ async def auto_generate_roll_numbers(
     ]
 
     div_label = f"Division {batch.division}"
-    start_roll = base_prefix + div_offset + 1
-    end_roll = base_prefix + div_offset + assigned_count
     return AutoRollNumberResponse(
-        message=f"Successfully assigned {assigned_count} roll numbers ({start_roll} to {end_roll}) for {div_label} ({std_num}th Standard).",
+        message=f"Successfully appended {newly_assigned_count} roll numbers at the end (ending at Roll #{next_roll - 1}) for {div_label}. Existing roll numbers were strictly preserved.",
         batch_id=batch.id,
         division=batch.division,
         standard_number=std_num,
         base_prefix=base_prefix,
         division_offset=div_offset,
-        assigned_count=assigned_count,
+        assigned_count=newly_assigned_count,
         roster=roster_out
     )
 

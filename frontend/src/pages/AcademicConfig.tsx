@@ -2516,6 +2516,7 @@ export const AcademicConfig: React.FC = () => {
                   type="button"
                   onClick={handleGenerateRollNumbers}
                   disabled={generatingRoll || batchRoster.length === 0}
+                  title="Assign sequential roll numbers to newly enrolled students at the end without disturbing existing roll numbers"
                   className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50 whitespace-nowrap cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />

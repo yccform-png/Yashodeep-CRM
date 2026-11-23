@@ -159,22 +159,28 @@ async def get_batch_subject_students(
             div_offset = 50 if div_char == "B" else (100 if div_char == "C" else 0)
             base_prefix = std_num * 100
 
+            max_roll_stmt = select(BatchStudent.roll_number).where(
+                BatchStudent.batch_id == bs.batch_id,
+                BatchStudent.roll_number != None
+            ).order_by(BatchStudent.roll_number.desc()).limit(1)
+            max_roll = (await db.execute(max_roll_stmt)).scalar_one_or_none()
+            next_roll = (max_roll + 1) if (max_roll is not None and max_roll >= (base_prefix + div_offset)) else (base_prefix + div_offset + 1)
+
             unique_students = []
             seen_ids = set()
             for e in enrs:
                 if e.student and e.student.id not in seen_ids and e.student.id not in already_assigned_ids:
                     seen_ids.add(e.student.id)
                     unique_students.append(e.student)
-            unique_students.sort(key=lambda s: (s.last_name.lower(), s.first_name.lower()))
 
-            for idx, stu in enumerate(unique_students):
-                assigned_roll = base_prefix + div_offset + idx + 1
+            for stu in unique_students:
                 new_bs = BatchStudent(
                     batch_id=bs.batch_id,
                     student_id=stu.id,
-                    roll_number=assigned_roll,
+                    roll_number=next_roll,
                     status="ACTIVE"
                 )
+                next_roll += 1
                 db.add(new_bs)
             await db.commit()
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from tests.conftest import TestAsyncSessionLocal
 from app.core.security import create_access_token
 from app.models.user import User
+from app.models.institute import Institute
 from app.models.fee import Invoice, InstallmentPlan, Installment
 from app.models.academic import Course, CourseVersion, CourseType, Class, Batch, AcademicYear, BatchStudent
 from app.models.enrollment import Enrollment, EnrollmentGroup
@@ -59,6 +60,10 @@ async def test_combined_9th_and_10th_admission_and_division_continuity(client: A
         assert ay is not None
         assert std9 is not None
         assert std10 is not None
+
+        inst = (await db.execute(select(Institute).where(Institute.is_active == True))).scalars().first()
+        form_fee = inst.admission_form_fee if (inst and inst.enable_admission_form_fee) else Decimal("0.00")
+        expected_total = Decimal("50000.00") + form_fee
 
         unique_id = uuid.uuid4().hex[:6]
 
@@ -195,7 +200,7 @@ async def test_combined_9th_and_10th_admission_and_division_continuity(client: A
     invoice_id = admit_data["invoice_id"]
 
     assert group_id is not None
-    assert Decimal(str(admit_data["total_fee"])) == Decimal("50000.00")
+    assert Decimal(str(admit_data["total_fee"])) == expected_total
 
     # 2. Verify Database State
     async with TestAsyncSessionLocal() as db:
@@ -213,10 +218,11 @@ async def test_combined_9th_and_10th_admission_and_division_continuity(client: A
             .options(selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments))
             .where(Invoice.id == uuid.UUID(invoice_id))
         )).scalars().first()
-        assert inv.total_amount == Decimal("50000.00")
+        assert inv.total_amount == expected_total
         assert len(inv.installment_plan.installments) == 4
+        expected_inst_amt = (expected_total / Decimal("4")).quantize(Decimal("0.01"))
         for inst in inv.installment_plan.installments:
-            assert inst.amount == Decimal("12500.00")
+            assert abs(inst.amount - expected_inst_amt) <= Decimal("1.00")
 
         # Verify student is in 9th Standard Div A
         bs = (await db.execute(

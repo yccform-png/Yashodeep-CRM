@@ -96,6 +96,7 @@ class AdmissionConfirmationResponse(BaseModel):
     total_fee: Decimal
     seat_allocated: Optional[str] = None
     bed_allocated: Optional[str] = None
+    roll_number: Optional[int] = None
     is_trial: bool = False
     trial_end_date: Optional[date] = None
     trial_receipt_number: Optional[str] = None

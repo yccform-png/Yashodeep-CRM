@@ -31,6 +31,7 @@ from app.modules.enrollments.schemas import (
 )
 from app.modules.students.service import generate_student_code_and_prn
 from app.modules.notifications.service import notification_dispatcher
+from app.modules.academics.router import get_next_roll_number_for_batch
 
 router = APIRouter(prefix="/enrollments", tags=["Admissions & Enrollments"])
 
@@ -150,6 +151,7 @@ async def process_full_admission(
     # 2. Academic Enrollment Handling
     enrollment = None
     enrollment_group = None
+    assigned_roll: Optional[int] = None
 
     is_universal_course = False
     if data.course_id:
@@ -278,7 +280,7 @@ async def process_full_admission(
             )
             db.add(es)
 
-        # Enroll student into teaching batch roster
+        # Enroll student into teaching batch roster with sequentially appended roll number (never disrupting existing roll numbers)
         if assigned_batch_id:
             bs_check = await db.execute(
                 select(BatchStudent).where(
@@ -287,12 +289,15 @@ async def process_full_admission(
                 )
             )
             if not bs_check.scalar_one_or_none():
+                assigned_roll = await get_next_roll_number_for_batch(db, assigned_batch_id)
                 bs_record = BatchStudent(
                     batch_id=assigned_batch_id,
                     student_id=student.id,
+                    roll_number=assigned_roll,
                     status="ACTIVE"
                 )
                 db.add(bs_record)
+                await db.flush()
 
     # 3. Facility Services: Hostel & Study Room
     seat_label = None
@@ -587,6 +592,7 @@ async def process_full_admission(
         total_fee=calc_result.total_amount,
         seat_allocated=seat_label,
         bed_allocated=bed_label,
+        roll_number=assigned_roll,
         message="Student admission completed successfully with all configured services"
     )
 
@@ -881,12 +887,15 @@ async def promote_student(
             )
         )
         if not bs_check.scalar_one_or_none():
+            next_roll = await get_next_roll_number_for_batch(db, assigned_next_batch_id)
             bs_record = BatchStudent(
                 batch_id=assigned_next_batch_id,
                 student_id=current_enr.student_id,
+                roll_number=next_roll,
                 status="ACTIVE"
             )
             db.add(bs_record)
+            await db.flush()
 
     await db.commit()
     await cache_service.delete(CacheKeys.dashboard_metrics())
@@ -1032,12 +1041,15 @@ async def enroll_existing_student_skill_course(
             )
         )
         if not bs_check.scalar_one_or_none():
+            next_roll = await get_next_roll_number_for_batch(db, assigned_batch_id)
             bs_record = BatchStudent(
                 batch_id=assigned_batch_id,
                 student_id=student.id,
+                roll_number=next_roll,
                 status="ACTIVE"
             )
             db.add(bs_record)
+            await db.flush()
 
     # 9. Invoicing: Either MERGE into existing open invoice or issue a SEPARATE add-on invoice
     base_fee = cver.base_fee if cver else Decimal("0.00")
@@ -1484,12 +1496,15 @@ async def process_bulk_cohort_promotion(
                     select(BatchStudent).where(BatchStudent.batch_id == assigned_batch_id, BatchStudent.student_id == student.id)
                 )).scalar_one_or_none()
                 if not existing_bs:
+                    next_roll = await get_next_roll_number_for_batch(db, assigned_batch_id)
                     bs_rec = BatchStudent(
                         batch_id=assigned_batch_id,
                         student_id=student.id,
+                        roll_number=next_roll,
                         status="ACTIVE"
                     )
                     db.add(bs_rec)
+                    await db.flush()
 
             # Generate Invoice & Installments
             inv_record = None
