@@ -26,16 +26,21 @@ import {
   ChevronRight,
   Filter,
   Eye,
-  Lock
+  Lock,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { HostelBunkBedCard } from '../components/HostelBunkBedCard';
 
 interface HostelBed {
   id: string;
   room_id: string;
   bed_number: string;
   bed_label: string;
+  tier?: 'UPPER' | 'LOWER' | 'SINGLE' | string;
+  bunk_group?: number;
   status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE';
   occupant_name?: string | null;
   occupant_code?: string | null;
@@ -1111,68 +1116,44 @@ export const HostelManagement: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Visual Miniature Bed Bays */}
-                        <div
-                          className={`grid gap-2 ${
-                            room.beds.length === 1
-                              ? 'grid-cols-1'
-                              : room.beds.length === 2
-                              ? 'grid-cols-2'
-                              : room.beds.length === 3
-                              ? 'grid-cols-3'
-                              : 'grid-cols-2 sm:grid-cols-4'
-                          }`}
-                        >
-                          {room.beds.map((bed) => {
-                            const isOccupied = bed.status === 'OCCUPIED';
-                            const subStatus = getBedSubscriptionStatus(bed);
-
-                            return (
-                              <div
-                                key={bed.id}
-                                className={`p-2 rounded-xl border text-left transition-all ${
-                                  isOccupied
-                                    ? 'bg-rose-50/70 border-rose-200 text-rose-900'
-                                    : 'bg-emerald-50/70 border border-dashed border-emerald-300 text-emerald-900'
-                                }`}
-                                title={
-                                  isOccupied
-                                    ? `${bed.bed_label}: ${bed.occupant_name} (${bed.occupant_code}) • Valid till ${bed.allocation_end_date}`
-                                    : `${bed.bed_label}: Available for allocation`
+                        {/* 2-Tier Bunk Bed Layout */}
+                        <div className="space-y-2">
+                          {room.capacity === 1 ? (
+                            <HostelBunkBedCard
+                              singleBed={room.beds[0]}
+                              showSubscriptionDetails={true}
+                              compact={true}
+                            />
+                          ) : (
+                            (() => {
+                              const bunksMap: Record<number, { upper?: any; lower?: any }> = {};
+                              room.beds.forEach((bed, idx) => {
+                                const grp = bed.bunk_group || Math.floor(idx / 2) + 1;
+                                if (!bunksMap[grp]) bunksMap[grp] = {};
+                                const isUpper = bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') || bed.bed_number.endsWith('-B');
+                                if (isUpper) {
+                                  bunksMap[grp].upper = bed;
+                                } else {
+                                  bunksMap[grp].lower = bed;
                                 }
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <div className="flex items-center space-x-1">
-                                    <Bed className={`w-3.5 h-3.5 ${isOccupied ? 'text-rose-600' : 'text-emerald-600'}`} />
-                                    <span className="font-bold text-xs">{bed.bed_label || bed.bed_number}</span>
-                                  </div>
-                                  {isOccupied && subStatus && (
-                                    <span
-                                      className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full ${subStatus.badgeClass}`}
-                                    >
-                                      {subStatus.daysRemaining}d
-                                    </span>
-                                  )}
-                                </div>
+                              });
 
-                                {isOccupied ? (
-                                  <div>
-                                    <p className="text-[11px] font-semibold text-slate-800 truncate">
-                                      {bed.occupant_name?.split(' ')[0]}
-                                    </p>
-                                    <p className="text-[9px] font-mono text-emerald-700 font-bold truncate">
-                                      {bed.occupant_code}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <p className="text-[10px] text-emerald-700 font-medium flex items-center space-x-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    <span>Vacant</span>
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
+                              return Object.keys(bunksMap).map((grpKey) => {
+                                const grpNum = Number(grpKey);
+                                const bunk = bunksMap[grpNum];
+                                return (
+                                  <HostelBunkBedCard
+                                    key={grpNum}
+                                    bunkNumber={grpNum}
+                                    upperBed={bunk.upper}
+                                    lowerBed={bunk.lower}
+                                    showSubscriptionDetails={true}
+                                    compact={true}
+                                  />
+                                );
+                              });
+                            })()
+                          )}
                         </div>
 
                         {/* Room Card Footer & Quick Actions */}
@@ -1349,6 +1330,19 @@ export const HostelManagement: React.FC = () => {
                                 </div>
                                 <div>
                                   <div className="flex items-center space-x-1.5">
+                                    {bed.tier === 'UPPER' || bed.bed_number.endsWith('-U') ? (
+                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                        <ArrowUp className="w-2.5 h-2.5 mr-0.5 text-blue-600" /> Upper
+                                      </span>
+                                    ) : bed.tier === 'SINGLE' ? (
+                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                        Single
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                                        <ArrowDown className="w-2.5 h-2.5 mr-0.5 text-amber-700" /> Lower
+                                      </span>
+                                    )}
                                     <span className="font-bold text-slate-900 text-sm">
                                       {bed.bed_label || bed.bed_number}
                                     </span>

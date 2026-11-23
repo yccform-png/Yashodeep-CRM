@@ -103,6 +103,8 @@ async def list_hostels(db: AsyncSession = Depends(get_db)):
                                 room_id=bed.room_id,
                                 bed_number=bed.bed_number,
                                 bed_label=bed.bed_label,
+                                tier=bed.tier or ("UPPER" if "-U" in bed.bed_number else "LOWER"),
+                                bunk_group=bed.bunk_group or 1,
                                 status=bed.status,
                                 occupant_name=occ_name,
                                 occupant_code=occ_code,
@@ -487,19 +489,58 @@ async def create_hostel_room(
     # Smart Auto-Provisioning of Beds
     created_beds: List[HostelBed] = []
     if data.auto_create_beds and data.capacity > 0:
-        for i in range(data.capacity):
-            letter = chr(ord('A') + i)
-            bed_number = f"{data.room_number}-{letter}"
-            bed_label = f"Bed {letter}"
+        if data.capacity == 1:
             bed = HostelBed(
                 room_id=room.id,
-                bed_number=bed_number,
-                bed_label=bed_label,
+                bed_number=f"{data.room_number}-1",
+                bed_label="Single Bed",
+                tier="SINGLE",
+                bunk_group=1,
                 status="AVAILABLE",
                 is_active=True
             )
             db.add(bed)
             created_beds.append(bed)
+        elif data.capacity == 2:
+            bed_l = HostelBed(
+                room_id=room.id,
+                bed_number=f"{data.room_number}-L",
+                bed_label="Lower Berth",
+                tier="LOWER",
+                bunk_group=1,
+                status="AVAILABLE",
+                is_active=True
+            )
+            bed_u = HostelBed(
+                room_id=room.id,
+                bed_number=f"{data.room_number}-U",
+                bed_label="Upper Berth",
+                tier="UPPER",
+                bunk_group=1,
+                status="AVAILABLE",
+                is_active=True
+            )
+            db.add(bed_l)
+            db.add(bed_u)
+            created_beds.extend([bed_l, bed_u])
+        else:
+            for i in range(data.capacity):
+                b_grp = (i // 2) + 1
+                b_tier = "LOWER" if i % 2 == 0 else "UPPER"
+                suffix = "L" if b_tier == "LOWER" else "U"
+                bed_number = f"{data.room_number}-B{b_grp}-{suffix}"
+                bed_label = f"Bunk {b_grp} - {'Lower Berth' if b_tier == 'LOWER' else 'Upper Berth'}"
+                bed = HostelBed(
+                    room_id=room.id,
+                    bed_number=bed_number,
+                    bed_label=bed_label,
+                    tier=b_tier,
+                    bunk_group=b_grp,
+                    status="AVAILABLE",
+                    is_active=True
+                )
+                db.add(bed)
+                created_beds.append(bed)
 
     await db.commit()
     await db.refresh(room)
@@ -519,6 +560,8 @@ async def create_hostel_room(
                 room_id=b.room_id,
                 bed_number=b.bed_number,
                 bed_label=b.bed_label,
+                tier=b.tier,
+                bunk_group=b.bunk_group,
                 status=b.status
             ) for b in created_beds
         ]
@@ -567,6 +610,8 @@ async def update_hostel_room(
                 room_id=b.room_id,
                 bed_number=b.bed_number,
                 bed_label=b.bed_label,
+                tier=b.tier or ("UPPER" if "-U" in b.bed_number else "LOWER"),
+                bunk_group=b.bunk_group or 1,
                 status=b.status
             ) for b in room.beds
         ]
@@ -607,17 +652,25 @@ async def create_hostel_bed(
     if not room:
         raise NotFoundException("Hostel room not found")
 
-    letter = chr(ord('A') + len(room.beds))
-    bed_number = data.bed_number or f"{room.room_number}-{letter}"
-    bed_label = data.bed_label or f"Bed {letter}"
+    default_tier = data.tier or ("UPPER" if len(room.beds) % 2 == 1 else "LOWER")
+    default_bunk = data.bunk_group or ((len(room.beds) // 2) + 1)
+    suffix = "U" if default_tier == "UPPER" else "L"
+    bed_number = data.bed_number or f"{room.room_number}-{suffix}"
+    bed_label = data.bed_label or ("Upper Berth" if default_tier == "UPPER" else "Lower Berth")
 
     if any(b.bed_number == bed_number for b in room.beds):
-        raise BadRequestException(f"Bed '{bed_number}' already exists in Room {room.room_number}")
+        # Fallback to bunk notation if duplicate
+        bed_number = f"{room.room_number}-B{default_bunk}-{suffix}"
+        if any(b.bed_number == bed_number for b in room.beds):
+            letter = chr(ord('A') + len(room.beds))
+            bed_number = f"{room.room_number}-{letter}"
 
     bed = HostelBed(
         room_id=room_id,
         bed_number=bed_number,
         bed_label=bed_label,
+        tier=default_tier,
+        bunk_group=default_bunk,
         status="AVAILABLE",
         is_active=True
     )
@@ -633,6 +686,8 @@ async def create_hostel_bed(
         room_id=bed.room_id,
         bed_number=bed_number,
         bed_label=bed_label,
+        tier=bed.tier,
+        bunk_group=bed.bunk_group,
         status=bed.status
     )
 

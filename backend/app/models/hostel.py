@@ -73,8 +73,10 @@ class HostelBed(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "hostel_beds"
 
     room_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hostel_rooms.id", ondelete="CASCADE"), nullable=False, index=True)
-    bed_number: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "101-A", "101-B"
-    bed_label: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    bed_number: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "101-L", "101-U"
+    bed_label: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., "Lower Berth", "Upper Berth"
+    tier: Mapped[str] = mapped_column(String(20), default="LOWER", nullable=False)  # UPPER, LOWER, SINGLE
+    bunk_group: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE", nullable=False, index=True)  # AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

@@ -30,7 +30,8 @@ import {
   Percent,
   HeartHandshake,
   Printer,
-  Clock
+  Clock,
+  Bed
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +39,7 @@ import { useInstitute } from '../context/InstituteContext';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { StudyRoomPhysicalFloorMap } from '../components/StudyRoomPhysicalFloorMap';
+import { HostelPhysicalFloorMap } from '../components/HostelPhysicalFloorMap';
 
 const initialFormData = {
   // Student & Demographics
@@ -132,6 +134,8 @@ export const Admissions: React.FC = () => {
   const [studySeats, setStudySeats] = useState<any[]>([]);
   const [showStudyRoomPickerModal, setShowStudyRoomPickerModal] = useState<boolean>(false);
   const [hostelBeds, setHostelBeds] = useState<any[]>([]);
+  const [showHostelPickerModal, setShowHostelPickerModal] = useState<boolean>(false);
+  const [allHostelsData, setAllHostelsData] = useState<any[]>([]);
   const [hostelPlans, setHostelPlans] = useState<any[]>([]);
   const [studyRoomPlans, setStudyRoomPlans] = useState<any[]>([]);
   const [admissionTrack, setAdmissionTrack] = useState<'REGULAR' | 'SKILL_ONLY' | 'FACILITY_ONLY'>('REGULAR');
@@ -220,7 +224,8 @@ export const Admissions: React.FC = () => {
     });
 
     api.get('/hostels').then((res) => {
-      const genderHostel = res.data.find((h: any) => h.gender_type === (formData.gender === 'MALE' ? 'BOYS' : 'GIRLS'));
+      setAllHostelsData(res.data || []);
+      const genderHostel = (res.data || []).find((h: any) => h.gender_type === (formData.gender === 'MALE' ? 'BOYS' : 'GIRLS'));
       const beds: any[] = [];
       if (genderHostel) {
         genderHostel.buildings.forEach((b: any) => {
@@ -228,7 +233,7 @@ export const Admissions: React.FC = () => {
             f.rooms.forEach((r: any) => {
               r.beds.forEach((bed: any) => {
                 if (bed.status === 'AVAILABLE') {
-                  beds.push({ ...bed, room_number: r.room_number });
+                  beds.push({ ...bed, room_number: r.room_number, tier: bed.tier, bunk_group: bed.bunk_group });
                 }
               });
             });
@@ -2902,24 +2907,79 @@ export const Admissions: React.FC = () => {
                 </div>
 
                 {formData.hostel_plan_id && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold text-slate-700">
                       Assign Room &amp; Bed <span className="text-rose-500">*</span>
                     </label>
-                    <select
-                      value={formData.hostel_bed_id}
-                      onChange={(e) => {
-                        setFormData({ ...formData, hostel_bed_id: e.target.value });
-                        clearFieldError('hostel_bed_id');
-                        clearFieldError('service_selection');
-                      }}
-                      className={getSelectClass('hostel_bed_id')}
-                    >
-                      <option value="">-- Select Vacant Bed --</option>
-                      {hostelBeds.map((b) => (
-                        <option key={b.id} value={b.id}>Room {b.room_number} - Bed {b.bed_number}</option>
-                      ))}
-                    </select>
+
+                    {/* Visual Floor Map Trigger & Selected Bed Status Card */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                        {formData.hostel_bed_id ? (
+                          <div className="flex items-center space-x-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="font-bold text-slate-900">
+                              {(() => {
+                                const b = hostelBeds.find((x) => x.id === formData.hostel_bed_id);
+                                if (!b) return `Bed ${formData.hostel_bed_id}`;
+                                const tierText = b.tier === 'UPPER' ? 'Upper Berth' : 'Lower Berth';
+                                return `Room ${b.room_number} • Bed ${b.bed_number} (${tierText})`;
+                              })()}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic">No bed selected yet</span>
+                        )}
+                        {formData.hostel_bed_id && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, hostel_bed_id: '' });
+                              clearFieldError('hostel_bed_id');
+                            }}
+                            className="text-[11px] text-rose-500 hover:text-rose-700 font-medium ml-2 cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowHostelPickerModal(true)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition cursor-pointer flex items-center justify-center space-x-1.5 shrink-0"
+                      >
+                        <Bed className="w-3.5 h-3.5" />
+                        <span>Open Bunk Bed Floor Map</span>
+                      </button>
+                    </div>
+
+                    {/* Quick Dropdown Fallback */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                        <span>Or choose from vacant bed dropdown:</span>
+                        <span className="font-semibold text-emerald-600">
+                          {hostelBeds.length} Available
+                        </span>
+                      </div>
+                      <select
+                        value={formData.hostel_bed_id}
+                        onChange={(e) => {
+                          setFormData({ ...formData, hostel_bed_id: e.target.value });
+                          clearFieldError('hostel_bed_id');
+                          clearFieldError('service_selection');
+                        }}
+                        className={getSelectClass('hostel_bed_id')}
+                      >
+                        <option value="">-- Select Vacant Bed --</option>
+                        {hostelBeds.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            Room {b.room_number} - Bed {b.bed_number} ({b.tier === 'UPPER' ? 'Upper Berth' : 'Lower Berth'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {fieldErrors.hostel_bed_id && (
                       <p className="text-[10px] text-rose-600 font-medium mt-1 flex items-center space-x-1">
                         <AlertCircle className="w-3 h-3 shrink-0" />
@@ -3506,6 +3566,83 @@ export const Admissions: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowStudyRoomPickerModal(false)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hostel Visual Bunk Bed Picker Modal */}
+      {showHostelPickerModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+                  <Home className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Select Hostel Bed • {formData.gender === 'MALE' ? 'Boys Residential Hostel' : 'Girls Residential Hostel'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Interactive 2-tier bunk bed floor plan. Click on any green Upper or Lower berth to assign.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHostelPickerModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center text-sm font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Interactive Floor Map Canvas */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
+              <HostelPhysicalFloorMap
+                hostels={allHostelsData}
+                selectedBedId={formData.hostel_bed_id}
+                onSelectBed={(bed) => {
+                  setFormData({ ...formData, hostel_bed_id: bed.id });
+                  clearFieldError('hostel_bed_id');
+                  clearFieldError('service_selection');
+                  setShowHostelPickerModal(false);
+                }}
+                genderFilter={formData.gender === 'MALE' ? 'BOYS' : 'GIRLS'}
+                interactiveOnlyAvailable={true}
+                compact={true}
+              />
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+              <div className="text-xs">
+                {formData.hostel_bed_id ? (
+                  <span className="text-emerald-700 font-bold flex items-center space-x-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Selected Bed:{' '}
+                      {(() => {
+                        const b = hostelBeds.find((x) => x.id === formData.hostel_bed_id);
+                        if (!b) return formData.hostel_bed_id;
+                        const tierText = b.tier === 'UPPER' ? 'Upper Berth' : 'Lower Berth';
+                        return `Room ${b.room_number} • Bed ${b.bed_number} (${tierText})`;
+                      })()}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Click on any emerald green Upper or Lower berth to lock in allocation.</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHostelPickerModal(false)}
                 className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
               >
                 Close

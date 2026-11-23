@@ -10,6 +10,8 @@ class HostelBedResponse(BaseModel):
     room_id: uuid.UUID
     bed_number: str
     bed_label: Optional[str] = None
+    tier: str = "LOWER"
+    bunk_group: int = 1
     status: str
     occupant_name: Optional[str] = None
     occupant_code: Optional[str] = None
@@ -137,3 +139,5 @@ class HostelRoomUpdate(BaseModel):
 class HostelBedCreate(BaseModel):
     bed_number: Optional[str] = None
     bed_label: Optional[str] = None
+    tier: Optional[str] = "LOWER"
+    bunk_group: Optional[int] = 1
