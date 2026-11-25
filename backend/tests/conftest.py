@@ -1,6 +1,7 @@
 import pytest
 import os
 import sys
+import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -18,6 +19,13 @@ from app.main import app
 # Use NullPool for tests so asyncpg connections are never reused across different asyncio loops
 test_engine = create_async_engine(settings.async_database_url, poolclass=NullPool)
 TestAsyncSessionLocal = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+_test_session_start_time: datetime.datetime = datetime.datetime.now(datetime.timezone.utc)
+
+
+def pytest_sessionstart(session):
+    global _test_session_start_time
+    _test_session_start_time = datetime.datetime.now(datetime.timezone.utc)
 
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -63,18 +71,15 @@ def auth_headers() -> dict:
 def pytest_sessionfinish(session, exitstatus):
     """
     Automatic teardown hook:
-    Strictly guards live production databases.
-    Only permitted in an isolated test environment.
+    Always cleans up any testing data generated during the test run,
+    while strictly preserving pre-existing database records.
     """
-    db_url = str(settings.DATABASE_URL or "")
-    if "neon.tech" in db_url or "aws" in db_url or settings.ENVIRONMENT != "test":
-        print("\n>>> Protected Database detected: Skipping automatic test purge to preserve all existing records.")
-        return
-
-    import asyncio
-    from scripts.cleanup_test_data import clean_database
+    from scripts.purge_test_data_safely import purge_test_data_sync
     try:
-        asyncio.run(clean_database())
+        purge_test_data_sync(cutoff=_test_session_start_time)
+        print("\n>>> Automatic test teardown complete: All transient test data safely removed.")
     except Exception as e:
-        print(f"Warning: Automatic test data cleanup failed: {e}")
+        print(f"\n>>> Warning: Automatic test data cleanup failed: {e}")
+
+
 
