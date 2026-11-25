@@ -147,7 +147,7 @@ async def list_hostels(db: AsyncSession = Depends(get_db)):
 @router.post("/allocate")
 async def allocate_bed(
     data: BedAllocationRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     student = await db.get(Student, data.student_id)
@@ -243,7 +243,7 @@ async def allocate_bed(
 async def renew_bed(
     allocation_id: uuid.UUID,
     data: BedRenewalRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     alloc = await db.get(BedAllocation, allocation_id)
@@ -307,7 +307,7 @@ async def renew_bed(
 async def check_out_bed(
     allocation_id: uuid.UUID,
     data: Optional[BedCheckOutRequest] = None,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     alloc = await db.get(BedAllocation, allocation_id)
@@ -351,7 +351,7 @@ async def check_out_bed(
 @router.post("/transfer")
 async def transfer_bed(
     data: BedTransferRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -515,7 +515,7 @@ async def transfer_bunk_to_room(
 @router.post("/visitors")
 async def log_visitor(
     data: HostelVisitorCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     visitor = HostelVisitor(
@@ -536,7 +536,7 @@ async def log_visitor(
 @router.post("/maintenance")
 async def report_maintenance(
     data: HostelMaintenanceCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "HOSTEL_WARDEN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     maint = HostelMaintenance(

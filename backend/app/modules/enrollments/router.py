@@ -1262,7 +1262,7 @@ async def enroll_existing_student_skill_course(
 @router.get("/cohort/{batch_id}/review", response_model=CohortReviewResponse)
 async def review_cohort_for_rollover(
     batch_id: uuid.UUID,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STAFF"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """

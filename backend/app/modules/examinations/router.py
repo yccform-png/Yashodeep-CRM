@@ -485,7 +485,7 @@ async def create_examination(
 @router.post("/marks")
 async def enter_marks(
     data: BulkMarksSubmission,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     exam_subj = await db.get(ExamSubject, data.exam_subject_id)
@@ -630,7 +630,7 @@ async def publish_results(
 async def notify_exam_results(
     examination_id: uuid.UUID,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """

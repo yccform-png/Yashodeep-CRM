@@ -279,19 +279,12 @@ async def list_attendance_sessions(
 @router.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_attendance_session(
     data: SessionCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     bs = await db.get(BatchSubject, data.batch_subject_id)
     if not bs:
         raise NotFoundException("Batch Subject not found")
-
-    # If teacher is logging in, ensure they are assigned or admin
-    if current_user.user_type == "TEACHER":
-        t_stmt = select(Teacher).where(Teacher.user_id == current_user.id)
-        teacher = (await db.execute(t_stmt)).scalar_one_or_none()
-        if not teacher or (bs.teacher_id and bs.teacher_id != teacher.id):
-            raise BadRequestException("Teacher is not assigned to this batch subject")
 
     # If an attendance session already exists for this subject on this date, reuse it (idempotent)
     existing_stmt = select(AttendanceSession).where(
@@ -329,7 +322,7 @@ async def create_attendance_session(
 async def mark_bulk_attendance(
     data: BulkAttendanceSubmission,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     session = await db.get(AttendanceSession, data.session_id)
@@ -384,7 +377,7 @@ async def mark_bulk_attendance(
 @router.post("/corrections")
 async def correct_attendance(
     data: AttendanceCorrectionRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "TEACHER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     record = await db.get(AttendanceRecord, data.attendance_record_id)

@@ -600,14 +600,14 @@ def seed_data():
                 hashed_password=get_password_hash("TeacherPass@2026!"),
                 first_name="Rajesh",
                 last_name="Sharma",
-                user_type=SystemRole.TEACHER.value,
+                user_type=SystemRole.ADMIN.value,
                 is_active=True,
                 is_verified=True
             )
             db.add(t_user)
             db.flush()
 
-            t_role = roles_map.get(SystemRole.TEACHER.value)
+            t_role = roles_map.get(SystemRole.ADMIN.value)
             if t_role:
                 db.add(UserRole(user_id=t_user.id, role_id=t_role.id))
                 db.flush()

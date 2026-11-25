@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
-from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
+from app.core.exceptions import NotFoundException, BadRequestException, ConflictException, ForbiddenException
 from app.core.cache import cache_service, CacheKeys, CacheInvalidator
 from app.models.user import User
 from app.models.institute import Institute
@@ -134,6 +134,7 @@ async def list_invoices(
     status_filter: Optional[str] = None,
     class_id: Optional[uuid.UUID] = None,
     batch_id: Optional[uuid.UUID] = None,
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = (
@@ -258,8 +259,11 @@ async def list_invoices(
 @router.get("/invoices/{invoice_id}/detailed", response_model=DetailedInvoiceResponse)
 async def get_detailed_invoice(
     invoice_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if current_user.user_type == "ADMIN":
+        raise ForbiddenException("Admins do not have access to financial invoices or ledgers")
     stmt = (
         select(Invoice)
         .options(
@@ -420,8 +424,11 @@ async def get_detailed_invoice(
 @router.get("/payments/{payment_id}/receipt", response_model=DetailedReceiptResponse)
 async def get_detailed_receipt(
     payment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if current_user.user_type == "ADMIN":
+        raise ForbiddenException("Admins do not have access to financial payment receipts")
     stmt = (
         select(Payment)
         .options(
@@ -562,7 +569,7 @@ async def get_detailed_receipt(
 async def record_payment(
     data: PaymentCreate,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     # Idempotency check on transaction reference
@@ -675,7 +682,7 @@ async def record_payment(
 @router.post("/refunds", response_model=RefundResponse, status_code=status.HTTP_201_CREATED)
 async def process_refund(
     data: RefundCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     payment = await db.get(Payment, data.payment_id)
@@ -709,7 +716,7 @@ async def process_refund(
 async def reschedule_installment(
     installment_id: uuid.UUID,
     data: InstallmentRescheduleRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = (
@@ -748,7 +755,7 @@ async def reschedule_installment(
 async def restructure_invoice_plan(
     invoice_id: uuid.UUID,
     data: PlanRestructureRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -892,7 +899,7 @@ async def send_invoice_fee_reminder(
     invoice_id: uuid.UUID,
     installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID to remind for"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -939,7 +946,7 @@ async def send_invoice_fee_reminder(
 async def send_installment_fee_reminder(
     installment_id: uuid.UUID,
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -994,7 +1001,7 @@ async def send_installment_fee_reminder(
 async def get_invoice_whatsapp_url(
     invoice_id: uuid.UUID,
     installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID"),
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """

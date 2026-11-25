@@ -65,7 +65,7 @@ def require_permission(permission_code: str):
         user_role_codes = {role.code for role in current_user.roles}
         user_role_codes.add(current_user.user_type)
 
-        if "SUPER_ADMIN" in user_role_codes or "ADMIN" in user_role_codes:
+        if "SUPER_ADMIN" in user_role_codes:
             return current_user
 
         # Collect all permissions

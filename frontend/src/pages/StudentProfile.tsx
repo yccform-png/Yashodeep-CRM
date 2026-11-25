@@ -44,8 +44,11 @@ import { DeleteStudentModal } from '../components/DeleteStudentModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { PaymentReceiptModal } from '../components/PaymentReceiptModal';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
+import { useAuth } from '../context/AuthContext';
 
 export const StudentProfile: React.FC = () => {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.user_type === 'SUPER_ADMIN';
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -329,12 +332,16 @@ export const StudentProfile: React.FC = () => {
     { id: 'services', label: '3. Services', icon: Layers },
     { id: 'hostel', label: '4. Hostel', icon: Home },
     { id: 'study_room', label: '5. Study Room', icon: Armchair },
-    { id: 'fees', label: '6. Fees & Invoices', icon: DollarSign },
-    { id: 'payments', label: '7. Payments & Receipts', icon: CreditCard },
-    { id: 'attendance', label: '8. Attendance', icon: CalendarCheck },
-    { id: 'examinations', label: '9. Examinations', icon: Award },
-    { id: 'documents', label: '10. Documents', icon: FileText },
-    { id: 'history', label: '11. Activity History', icon: History }
+    ...(isSuperAdmin
+      ? [
+          { id: 'fees', label: '6. Fees & Invoices', icon: DollarSign },
+          { id: 'payments', label: '7. Payments & Receipts', icon: CreditCard },
+        ]
+      : []),
+    { id: 'attendance', label: `${isSuperAdmin ? '8' : '6'}. Attendance`, icon: CalendarCheck },
+    { id: 'examinations', label: `${isSuperAdmin ? '9' : '7'}. Examinations`, icon: Award },
+    { id: 'documents', label: `${isSuperAdmin ? '10' : '8'}. Documents`, icon: FileText },
+    { id: 'history', label: `${isSuperAdmin ? '11' : '9'}. Activity History`, icon: History }
   ];
 
   return (

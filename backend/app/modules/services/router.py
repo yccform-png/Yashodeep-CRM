@@ -99,7 +99,7 @@ async def list_service_plans(
 @router.post("/plans", response_model=ServicePlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_service_plan(
     data: ServicePlanCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     plan = ServicePlan(
@@ -123,7 +123,7 @@ async def create_service_plan(
 async def update_service_plan(
     plan_id: uuid.UUID,
     data: ServicePlanUpdate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     plan = await db.get(ServicePlan, plan_id)
@@ -154,7 +154,7 @@ async def update_service_plan(
 @router.delete("/plans/{plan_id}")
 async def delete_service_plan(
     plan_id: uuid.UUID,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     plan = await db.get(ServicePlan, plan_id)

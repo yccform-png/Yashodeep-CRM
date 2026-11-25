@@ -28,7 +28,7 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "user_type IN ('SUPER_ADMIN', 'ADMIN', 'TEACHER', 'ACCOUNTANT', 'HOSTEL_WARDEN', 'STUDY_ROOM_MANAGER', 'STUDENT', 'PARENT')",
+            "user_type IN ('SUPER_ADMIN', 'ADMIN', 'STUDENT', 'PARENT')",
             name="check_user_type"
         ),
     )

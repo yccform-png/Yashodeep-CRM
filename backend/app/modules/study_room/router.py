@@ -120,7 +120,7 @@ async def get_study_room_seats(
 @router.post("/allocate")
 async def allocate_seat(
     data: SeatAllocationRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STUDY_ROOM_MANAGER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     student = await db.get(Student, data.student_id)
@@ -221,7 +221,7 @@ async def allocate_seat(
 @router.post("/transfer")
 async def transfer_seat(
     data: SeatTransferRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STUDY_ROOM_MANAGER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     old_alloc = await db.get(SeatAllocation, data.current_allocation_id)
@@ -274,7 +274,7 @@ async def transfer_seat(
 async def renew_seat(
     allocation_id: uuid.UUID,
     data: SeatRenewalRequest,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STUDY_ROOM_MANAGER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     alloc = await db.get(SeatAllocation, allocation_id)
@@ -338,7 +338,7 @@ async def renew_seat(
 async def vacate_seat(
     allocation_id: uuid.UUID,
     data: Optional[SeatVacateRequest] = None,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STUDY_ROOM_MANAGER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     alloc = await db.get(SeatAllocation, allocation_id)
@@ -381,7 +381,7 @@ async def vacate_seat(
 @router.post("/attendance")
 async def record_study_attendance(
     data: StudyRoomAttendanceRecord,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "STUDY_ROOM_MANAGER"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     today = date.today()

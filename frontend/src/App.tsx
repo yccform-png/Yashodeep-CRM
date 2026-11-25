@@ -53,18 +53,20 @@ export const App: React.FC = () => {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="admissions" element={<Admissions />} />
-          <Route path="students" element={<StudentsList />} />
-          <Route path="students/:id" element={<StudentProfile />} />
-          <Route path="academics" element={<AcademicConfig />} />
-          <Route path="fees" element={<FeesManagement />} />
-          <Route path="study-room" element={<StudyRoomVisualizer />} />
-          <Route path="hostel" element={<HostelManagement />} />
-          <Route path="facility-plans" element={<FacilityPlans />} />
-          <Route path="attendance" element={<AttendanceMarking />} />
-          <Route path="examinations" element={<Examinations />} />
-          <Route path="institute-settings" element={<InstituteSettings />} />
-          <Route path="portals" element={<Portals />} />
+          <Route path="admissions" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><Admissions /></ProtectedRoute>} />
+          <Route path="students" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><StudentsList /></ProtectedRoute>} />
+          <Route path="students/:id" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'STUDENT', 'PARENT']}><StudentProfile /></ProtectedRoute>} />
+          <Route path="academics" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><AcademicConfig /></ProtectedRoute>} />
+          {/* Strict Financial Lockdown: SUPER_ADMIN Only */}
+          <Route path="fees" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']}><FeesManagement /></ProtectedRoute>} />
+          <Route path="facility-plans" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']}><FacilityPlans /></ProtectedRoute>} />
+          {/* Operational Duties: ADMIN & SUPER_ADMIN */}
+          <Route path="study-room" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><StudyRoomVisualizer /></ProtectedRoute>} />
+          <Route path="hostel" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><HostelManagement /></ProtectedRoute>} />
+          <Route path="attendance" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><AttendanceMarking /></ProtectedRoute>} />
+          <Route path="examinations" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><Examinations /></ProtectedRoute>} />
+          <Route path="institute-settings" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}><InstituteSettings /></ProtectedRoute>} />
+          <Route path="portals" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'STUDENT', 'PARENT']}><Portals /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

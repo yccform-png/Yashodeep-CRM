@@ -38,18 +38,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
   };
 
   const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'ACCOUNTANT', 'HOSTEL_WARDEN', 'STUDY_ROOM_MANAGER'] },
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'New Admission', path: '/admissions', icon: UserPlus, roles: ['SUPER_ADMIN', 'ADMIN'] },
-    { name: 'Students Registry', path: '/students', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'ACCOUNTANT', 'HOSTEL_WARDEN', 'STUDY_ROOM_MANAGER'] },
-    { name: 'Dynamic Fee Engine', path: '/fees', icon: DollarSign, roles: ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT'] },
-    { name: 'Attendance', path: '/attendance', icon: CalendarCheck, roles: ['SUPER_ADMIN', 'ADMIN', 'TEACHER'] },
+    { name: 'Students Registry', path: '/students', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Dynamic Fee Engine', path: '/fees', icon: DollarSign, roles: ['SUPER_ADMIN'] },
+    { name: 'Facility Plans & Pricing', path: '/facility-plans', icon: Tag, roles: ['SUPER_ADMIN'] },
+    { name: 'Attendance', path: '/attendance', icon: CalendarCheck, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Academics & Batches', path: '/academics', icon: GraduationCap, roles: ['SUPER_ADMIN', 'ADMIN'] },
-    { name: 'Exams & Results', path: '/examinations', icon: Award, roles: ['SUPER_ADMIN', 'ADMIN', 'TEACHER'] },
-    { name: 'Study Room (150 Seats)', path: '/study-room', icon: Armchair, roles: ['SUPER_ADMIN', 'ADMIN', 'STUDY_ROOM_MANAGER'] },
-    { name: 'Hostel Facilities', path: '/hostel', icon: Home, roles: ['SUPER_ADMIN', 'ADMIN', 'HOSTEL_WARDEN'] },
-    { name: 'Facility Plans & Pricing', path: '/facility-plans', icon: Tag, roles: ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT', 'HOSTEL_WARDEN', 'STUDY_ROOM_MANAGER'] },
+    { name: 'Exams & Results', path: '/examinations', icon: Award, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Study Room (150 Seats)', path: '/study-room', icon: Armchair, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Hostel Facilities', path: '/hostel', icon: Home, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Institute Profile', path: '/institute-settings', icon: Landmark, roles: ['SUPER_ADMIN', 'ADMIN'] },
-    { name: 'Role Portals', path: '/portals', icon: Layers, roles: ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'ACCOUNTANT', 'HOSTEL_WARDEN', 'STUDY_ROOM_MANAGER', 'STUDENT', 'PARENT'] },
+    { name: 'Student & Parent Portals', path: '/portals', icon: Layers, roles: ['SUPER_ADMIN', 'ADMIN', 'STUDENT', 'PARENT'] },
   ];
 
   const filteredItems = navItems.filter((item) => hasRole(item.roles));

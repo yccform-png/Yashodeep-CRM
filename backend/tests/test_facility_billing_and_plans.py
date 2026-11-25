@@ -28,7 +28,7 @@ async def manager_auth_headers() -> dict:
                 hashed_password="hashed_dummy_pw",
                 first_name="Study",
                 last_name="Manager",
-                user_type="STUDY_ROOM_MANAGER",
+                user_type="ADMIN",
                 is_active=True
             )
             session.add(user)
@@ -41,8 +41,8 @@ async def manager_auth_headers() -> dict:
         subject=user_id,
         extra_claims={
             "email": "study_manager@institute.edu",
-            "user_type": "STUDY_ROOM_MANAGER",
-            "roles": ["STUDY_ROOM_MANAGER"]
+            "user_type": "ADMIN",
+            "roles": ["ADMIN"]
         }
     )
     return {"Authorization": f"Bearer {token}"}

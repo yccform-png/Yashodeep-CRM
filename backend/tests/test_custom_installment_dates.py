@@ -16,7 +16,7 @@ from app.models.fee import Invoice, InstallmentPlan, Installment
 
 @pytest.fixture
 async def accountant_auth_headers() -> dict:
-    """Accountant user with ACCOUNTANT role."""
+    """Super Admin user with full finance access."""
     async with TestAsyncSessionLocal() as session:
         user = (await session.execute(
             select(User).where(User.email == "accountant_test@institute.edu")
@@ -26,8 +26,8 @@ async def accountant_auth_headers() -> dict:
                 email="accountant_test@institute.edu",
                 hashed_password="hashed_dummy_pw",
                 first_name="Finance",
-                last_name="Accountant",
-                user_type="ACCOUNTANT",
+                last_name="SuperAdmin",
+                user_type="SUPER_ADMIN",
                 is_active=True
             )
             session.add(user)
@@ -40,8 +40,8 @@ async def accountant_auth_headers() -> dict:
         subject=user_id,
         extra_claims={
             "email": "accountant_test@institute.edu",
-            "user_type": "ACCOUNTANT",
-            "roles": ["ACCOUNTANT"]
+            "user_type": "SUPER_ADMIN",
+            "roles": ["SUPER_ADMIN"]
         }
     )
     return {"Authorization": f"Bearer {token}"}
@@ -49,18 +49,18 @@ async def accountant_auth_headers() -> dict:
 
 @pytest.fixture
 async def counselor_auth_headers() -> dict:
-    """Counselor/Teacher user with non-admin, non-finance role."""
+    """Student user without administrative/financial role."""
     async with TestAsyncSessionLocal() as session:
         user = (await session.execute(
-            select(User).where(User.email == "counselor_test@institute.edu")
+            select(User).where(User.email == "student_counselor_test@institute.edu")
         )).scalars().first()
         if not user:
             user = User(
-                email="counselor_test@institute.edu",
+                email="student_counselor_test@institute.edu",
                 hashed_password="hashed_dummy_pw",
-                first_name="Counselor",
-                last_name="Staff",
-                user_type="TEACHER",
+                first_name="Student",
+                last_name="User",
+                user_type="STUDENT",
                 is_active=True
             )
             session.add(user)
@@ -72,9 +72,9 @@ async def counselor_auth_headers() -> dict:
     token = create_access_token(
         subject=user_id,
         extra_claims={
-            "email": "counselor_test@institute.edu",
-            "user_type": "TEACHER",
-            "roles": ["TEACHER"]
+            "email": "student_counselor_test@institute.edu",
+            "user_type": "STUDENT",
+            "roles": ["STUDENT"]
         }
     )
     return {"Authorization": f"Bearer {token}"}

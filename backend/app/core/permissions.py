@@ -4,10 +4,6 @@ from enum import Enum
 class SystemRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     ADMIN = "ADMIN"
-    TEACHER = "TEACHER"
-    ACCOUNTANT = "ACCOUNTANT"
-    HOSTEL_WARDEN = "HOSTEL_WARDEN"
-    STUDY_ROOM_MANAGER = "STUDY_ROOM_MANAGER"
     STUDENT = "STUDENT"
     PARENT = "PARENT"
 
@@ -37,42 +33,18 @@ class PermissionModule(str, Enum):
 
 DEFAULT_ROLE_PERMISSIONS = {
     SystemRole.SUPER_ADMIN: ["*"],
-    SystemRole.ADMIN: ["*"],
-    SystemRole.TEACHER: [
-        "ACADEMICS:READ",
-        "STUDENTS:READ",
-        "ATTENDANCE:CREATE",
-        "ATTENDANCE:READ",
-        "ATTENDANCE:UPDATE",
-        "EXAMINATIONS:CREATE",
-        "EXAMINATIONS:READ",
-        "EXAMINATIONS:UPDATE",
-    ],
-    SystemRole.ACCOUNTANT: [
-        "STUDENTS:READ",
-        "ENROLLMENTS:READ",
-        "FEES:MANAGE",
-        "FEES:READ",
-        "FEES:UPDATE",
-        "PAYMENTS:CREATE",
-        "PAYMENTS:READ",
-        "PAYMENTS:UPDATE",
-        "REPORTS:READ",
-    ],
-    SystemRole.HOSTEL_WARDEN: [
-        "STUDENTS:READ",
-        "HOSTEL:MANAGE",
-        "HOSTEL:CREATE",
-        "HOSTEL:READ",
-        "HOSTEL:UPDATE",
-        "ATTENDANCE:READ",
-    ],
-    SystemRole.STUDY_ROOM_MANAGER: [
-        "STUDENTS:READ",
-        "STUDY_ROOM:MANAGE",
-        "STUDY_ROOM:CREATE",
-        "STUDY_ROOM:READ",
-        "STUDY_ROOM:UPDATE",
+    SystemRole.ADMIN: [
+        "ACADEMICS:*",
+        "STUDENTS:*",
+        "ENROLLMENTS:*",
+        "ATTENDANCE:*",
+        "EXAMINATIONS:*",
+        "STUDY_ROOM:*",
+        "HOSTEL:*",
+        "REPORTS:ACADEMIC",
+        "SETTINGS:READ",
+        "SETTINGS:UPDATE",
+        "USERS:READ",
     ],
     SystemRole.STUDENT: [
         "STUDENTS:READ_SELF",

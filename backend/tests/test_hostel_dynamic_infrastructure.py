@@ -26,7 +26,7 @@ async def warden_auth_headers() -> dict:
                 hashed_password="hashed_dummy_pw",
                 first_name="Hostel",
                 last_name="Warden",
-                user_type="HOSTEL_WARDEN",
+                user_type="ADMIN",
                 is_active=True
             )
             session.add(user)
@@ -39,8 +39,8 @@ async def warden_auth_headers() -> dict:
         subject=user_id,
         extra_claims={
             "email": "warden_test@institute.edu",
-            "user_type": "HOSTEL_WARDEN",
-            "roles": ["HOSTEL_WARDEN"]
+            "user_type": "ADMIN",
+            "roles": ["ADMIN"]
         }
     )
     return {"Authorization": f"Bearer {token}"}
