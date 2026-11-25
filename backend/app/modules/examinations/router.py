@@ -12,7 +12,7 @@ from app.core.deps import get_current_user, require_role
 from app.core.exceptions import NotFoundException, BadRequestException
 from app.core.cache import cache_service, CacheKeys
 from app.models.user import User
-from app.models.student import Student
+from app.models.student import Student, Guardian, StudentGuardian
 from app.models.academic import Subject, Class, Stream, Course, Batch, BatchStudent
 from app.models.enrollment import Enrollment, EnrollmentSubject
 from app.models.examination import (
@@ -22,6 +22,8 @@ from app.modules.examinations.schemas import (
     ExaminationCreate, ExaminationResponse, BulkMarksSubmission, StudentResultResponse
 )
 from app.modules.notifications.service import notification_dispatcher
+from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
+from app.modules.notifications.templates import format_exam_result_whatsapp_text, build_whatsapp_click_url
 
 router = APIRouter(prefix="/examinations", tags=["Examinations"])
 
@@ -257,7 +259,7 @@ async def get_examination_details(
             selectinload(Examination.exam_subjects).selectinload(ExamSubject.academic_class),
             selectinload(Examination.exam_subjects).selectinload(ExamSubject.course),
             selectinload(Examination.exam_subjects).selectinload(ExamSubject.marks).selectinload(ExamMarks.student),
-            selectinload(Examination.results).selectinload(ExamResult.student)
+            selectinload(Examination.results).selectinload(ExamResult.student).selectinload(Student.guardians).selectinload(StudentGuardian.guardian)
         )
         .where(Examination.id == examination_id)
     )
@@ -307,18 +309,53 @@ async def get_examination_details(
         })
 
     results_out = []
+    subject_names = [es.subject.name for es in (exam.exam_subjects or []) if es.subject]
+    subject_name = ", ".join(subject_names) if subject_names else (exam.name or "Curriculum Evaluation")
+
     for r in exam.results:
-        s_name = f"{r.student.first_name} {r.student.last_name}" if r.student else ""
-        s_code = r.student.student_code if r.student else ""
+        stu = r.student
+        s_name = f"{stu.first_name} {stu.last_name}".strip() if stu else ""
+        s_code = stu.student_code if stu else ""
+        s_prn = stu.prn if stu and stu.prn else (s_code.replace("STU-", "PRN-") if s_code else "")
+        parent_name, parent_phone, parent_email = notification_dispatcher._resolve_contact(stu) if stu else ("Parent / Guardian", None, None)
+
+        marks_obtained = float(r.total_obtained) if r.total_obtained is not None else 0.0
+        max_marks = float(r.total_possible) if r.total_possible is not None else 100.0
+        percentage = float(r.percentage) if r.percentage is not None else (round((marks_obtained / max_marks) * 100, 2) if max_marks else 0.0)
+        grade = r.grade or ("A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B+" if percentage >= 70 else ("B" if percentage >= 60 else "C"))))
+        is_pass = bool(r.is_pass) if r.is_pass is not None else (percentage >= 35.0)
+
+        wa_text = format_exam_result_whatsapp_text(
+            parent_name=parent_name,
+            exam_name=exam.name,
+            subject_name=subject_name,
+            student_name=s_name,
+            marks_obtained=marks_obtained,
+            max_marks=max_marks,
+            percentage=percentage,
+            grade=grade,
+            is_pass=is_pass,
+            rank=r.rank
+        )
+        wa_url = build_whatsapp_click_url(parent_phone, wa_text) if parent_phone else ""
+
         results_out.append({
             "student_id": r.student_id,
             "student_name": s_name,
             "student_code": s_code,
+            "prn": s_prn,
+            "parent_name": parent_name,
+            "parent_phone": parent_phone,
+            "parent_email": parent_email,
             "total_obtained": r.total_obtained,
             "total_possible": r.total_possible,
             "percentage": r.percentage,
             "grade": r.grade,
-            "is_pass": r.is_pass
+            "rank": r.rank,
+            "is_pass": r.is_pass,
+            "whatsapp_message": wa_text,
+            "whatsapp_url": wa_url,
+            "whatsapp_configured": meta_whatsapp_client.enabled
         })
 
     return {
@@ -328,6 +365,7 @@ async def get_examination_details(
         "start_date": exam.start_date,
         "end_date": exam.end_date,
         "is_published": exam.is_published,
+        "whatsapp_configured": meta_whatsapp_client.enabled,
         "subjects": subjects_out,
         "results": results_out
     }
@@ -606,9 +644,17 @@ async def notify_exam_results(
         notification_dispatcher.dispatch_exam_results,
         exam_id=examination_id
     )
+
+    msg = "Official scorecard report emails dispatched to parents and students."
+    if meta_whatsapp_client.enabled:
+        msg += " Automated Meta WhatsApp messages scheduled."
+    else:
+        msg += " Click WhatsApp next to each student to send directly via WhatsApp Web / App."
+
     return {
         "success": True,
-        "message": "Examination scorecards scheduled for dispatch via WhatsApp and Email"
+        "message": msg,
+        "whatsapp_configured": meta_whatsapp_client.enabled
     }
 
 

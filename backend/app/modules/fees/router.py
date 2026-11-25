@@ -25,6 +25,8 @@ from app.models.fee import (
     PaymentAllocation, Receipt, Refund
 )
 from app.modules.notifications.service import notification_dispatcher
+from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
+from app.modules.notifications.templates import format_fee_reminder_whatsapp_text, build_whatsapp_click_url
 from app.modules.fees.pricing_engine import PricingEngine, FeePreviewResult
 from app.modules.fees.schemas import (
     FeePreviewRequest, InvoiceResponse, PaymentCreate, PaymentResponse,
@@ -840,6 +842,51 @@ async def restructure_invoice_plan(
 # FEE REMINDERS (MANUAL & AUTOMATED CRON)
 # =============================================================================
 
+def _build_fee_reminder_whatsapp_info(inv: Invoice, installment_id: Optional[uuid.UUID] = None):
+    stu = inv.student
+    student_name = f"{stu.first_name} {stu.last_name}".strip() if stu else "Student"
+    parent_name, parent_phone, parent_email = notification_dispatcher._resolve_contact(stu) if stu else ("Parent / Guardian", None, None)
+    course_name = inv.enrollment.course.name if (inv.enrollment and inv.enrollment.course) else "Academic Course"
+
+    target_inst = None
+    installments = inv.installment_plan.installments if getattr(inv, "installment_plan", None) else []
+    if installment_id:
+        target_inst = next((i for i in installments if i.id == installment_id), None)
+    if not target_inst:
+        unpaid = [i for i in installments if i.status != "PAID"]
+        target_inst = unpaid[0] if unpaid else (installments[0] if installments else None)
+
+    inst_num = target_inst.installment_number if target_inst else 1
+    unpaid_amount = float(target_inst.amount - (target_inst.paid_amount or 0)) if target_inst else float(inv.balance_amount)
+    due_date_str = str(target_inst.due_date) if target_inst else str(inv.due_date)
+    is_overdue = (target_inst.due_date < date.today()) if target_inst else (inv.due_date < date.today())
+
+    wa_text = format_fee_reminder_whatsapp_text(
+        parent_name=parent_name,
+        installment_number=inst_num,
+        amount=unpaid_amount,
+        student_name=student_name,
+        due_date=due_date_str,
+        invoice_number=inv.invoice_number,
+        course_name=course_name,
+        is_overdue=is_overdue
+    )
+    wa_url = build_whatsapp_click_url(parent_phone, wa_text) if parent_phone else ""
+
+    return {
+        "parent_name": parent_name,
+        "parent_phone": parent_phone,
+        "parent_email": parent_email,
+        "installment_number": inst_num,
+        "amount": unpaid_amount,
+        "due_date": due_date_str,
+        "is_overdue": is_overdue,
+        "whatsapp_message": wa_text,
+        "whatsapp_url": wa_url,
+        "whatsapp_configured": meta_whatsapp_client.enabled
+    }
+
+
 @router.post("/invoices/{invoice_id}/remind")
 async def send_invoice_fee_reminder(
     invoice_id: uuid.UUID,
@@ -850,19 +897,41 @@ async def send_invoice_fee_reminder(
 ):
     """
     Manually triggers fee reminder dispatch to parent and student via WhatsApp & Email.
+    Returns direct WhatsApp click-to-chat URL for instant delivery.
     """
-    inv = await db.get(Invoice, invoice_id)
+    stmt = (
+        select(Invoice)
+        .options(
+            selectinload(Invoice.student)
+            .selectinload(Student.guardians)
+            .selectinload(StudentGuardian.guardian),
+            selectinload(Invoice.enrollment).selectinload(Enrollment.course),
+            selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments)
+        )
+        .where(Invoice.id == invoice_id)
+    )
+    inv = (await db.execute(stmt)).scalar_one_or_none()
     if not inv:
         raise NotFoundException(f"Invoice {invoice_id} not found")
+
+    wa_info = _build_fee_reminder_whatsapp_info(inv, installment_id)
 
     background_tasks.add_task(
         notification_dispatcher.dispatch_fee_reminder,
         invoice_id=invoice_id,
         installment_id=installment_id
     )
+
+    msg = f"Due reminder for Installment #{wa_info['installment_number']} scheduled via Email."
+    if meta_whatsapp_client.enabled:
+        msg += " Automated Meta WhatsApp message dispatched."
+    else:
+        msg += " Click WhatsApp to open chat directly with parent."
+
     return {
         "success": True,
-        "message": "Fee reminder dispatch scheduled successfully via WhatsApp and Email"
+        "message": msg,
+        **wa_info
     }
 
 
@@ -875,6 +944,7 @@ async def send_installment_fee_reminder(
 ):
     """
     Manually triggers fee reminder for a specific installment to parent and student via WhatsApp & Email.
+    Returns direct WhatsApp click-to-chat URL for instant delivery.
     """
     inst = await db.get(Installment, installment_id)
     if not inst:
@@ -884,15 +954,69 @@ async def send_installment_fee_reminder(
     if not plan or not plan.invoice_id:
         raise NotFoundException("Associated invoice not found for this installment")
 
+    stmt = (
+        select(Invoice)
+        .options(
+            selectinload(Invoice.student)
+            .selectinload(Student.guardians)
+            .selectinload(StudentGuardian.guardian),
+            selectinload(Invoice.enrollment).selectinload(Enrollment.course),
+            selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments)
+        )
+        .where(Invoice.id == plan.invoice_id)
+    )
+    inv = (await db.execute(stmt)).scalar_one_or_none()
+    if not inv:
+        raise NotFoundException(f"Invoice {plan.invoice_id} not found")
+
+    wa_info = _build_fee_reminder_whatsapp_info(inv, installment_id)
+
     background_tasks.add_task(
         notification_dispatcher.dispatch_fee_reminder,
         invoice_id=plan.invoice_id,
         installment_id=installment_id
     )
+
+    msg = f"Fee reminder for Installment #{inst.installment_number} scheduled via Email."
+    if meta_whatsapp_client.enabled:
+        msg += " Automated Meta WhatsApp message dispatched."
+    else:
+        msg += " Click WhatsApp to open chat directly with parent."
+
     return {
         "success": True,
-        "message": f"Fee reminder for Installment #{inst.installment_number} scheduled successfully"
+        "message": msg,
+        **wa_info
     }
+
+
+@router.get("/invoices/{invoice_id}/whatsapp-url")
+async def get_invoice_whatsapp_url(
+    invoice_id: uuid.UUID,
+    installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID"),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns pre-formatted WhatsApp deep link and text message for instant direct sending.
+    """
+    stmt = (
+        select(Invoice)
+        .options(
+            selectinload(Invoice.student)
+            .selectinload(Student.guardians)
+            .selectinload(StudentGuardian.guardian),
+            selectinload(Invoice.enrollment).selectinload(Enrollment.course),
+            selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments)
+        )
+        .where(Invoice.id == invoice_id)
+    )
+    inv = (await db.execute(stmt)).scalar_one_or_none()
+    if not inv:
+        raise NotFoundException(f"Invoice {invoice_id} not found")
+
+    return _build_fee_reminder_whatsapp_info(inv, installment_id)
+
 
 
 @router.api_route("/reminders/process-due", methods=["GET", "POST"])

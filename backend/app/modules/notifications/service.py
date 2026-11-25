@@ -207,12 +207,15 @@ class NotificationDispatcher:
                             payload=wa_template
                         )
                         try:
-                            await meta_whatsapp_client.send_template_message(
+                            res = await meta_whatsapp_client.send_template_message(
                                 to_phone=target_phone,
                                 template_name=wa_template["template_name"],
                                 components=wa_template["components"]
                             )
-                            await self._update_outbox_result(db, outbox.id, "SENT")
+                            if res.get("is_mock"):
+                                await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                            else:
+                                await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
                             logger.error(f"Failed to dispatch absence WhatsApp to {target_phone}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
@@ -331,12 +334,15 @@ class NotificationDispatcher:
                         payload=wa_payload
                     )
                     try:
-                        await meta_whatsapp_client.send_template_message(
+                        res = await meta_whatsapp_client.send_template_message(
                             to_phone=target_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
-                        await self._update_outbox_result(db, outbox.id, "SENT")
+                        if res.get("is_mock"):
+                            await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                        else:
+                            await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
                         logger.error(f"Failed to dispatch payment WhatsApp to {target_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
@@ -444,12 +450,15 @@ class NotificationDispatcher:
                         payload={**wa_payload, "installment_id": str(target_inst.id), "invoice_id": str(inv.id)}
                     )
                     try:
-                        await meta_whatsapp_client.send_template_message(
+                        res = await meta_whatsapp_client.send_template_message(
                             to_phone=parent_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
-                        await self._update_outbox_result(db, outbox.id, "SENT")
+                        if res.get("is_mock"):
+                            await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                        else:
+                            await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
                         logger.error(f"Failed to dispatch fee reminder WhatsApp to {parent_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
@@ -650,12 +659,15 @@ class NotificationDispatcher:
                             payload={**wa_payload, "exam_id": str(exam.id), "student_id": str(stu.id)}
                         )
                         try:
-                            await meta_whatsapp_client.send_template_message(
+                            res = await meta_whatsapp_client.send_template_message(
                                 to_phone=parent_phone,
                                 template_name=wa_payload["template_name"],
                                 components=wa_payload["components"]
                             )
-                            await self._update_outbox_result(db, outbox.id, "SENT")
+                            if res.get("is_mock"):
+                                await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                            else:
+                                await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
                             logger.error(f"Failed to dispatch exam result WhatsApp to {parent_phone}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
@@ -764,12 +776,15 @@ class NotificationDispatcher:
                         payload=wa_payload
                     )
                     try:
-                        await meta_whatsapp_client.send_template_message(
+                        res = await meta_whatsapp_client.send_template_message(
                             to_phone=target_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
-                        await self._update_outbox_result(db, outbox.id, "SENT")
+                        if res.get("is_mock"):
+                            await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                        else:
+                            await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
                         logger.error(f"Failed to dispatch welcome WhatsApp to {target_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
@@ -933,12 +948,15 @@ class NotificationDispatcher:
                         payload=wa_payload
                     )
                     try:
-                        await meta_whatsapp_client.send_template_message(
+                        res = await meta_whatsapp_client.send_template_message(
                             to_phone=target_phone,
                             template_name=wa_payload["template_name"],
                             components=wa_payload["components"]
                         )
-                        await self._update_outbox_result(db, outbox.id, "SENT")
+                        if res.get("is_mock"):
+                            await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                        else:
+                            await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
                         logger.error(f"Failed to dispatch promotion WhatsApp to {target_phone}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))

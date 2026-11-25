@@ -29,7 +29,10 @@ import {
   Folder,
   FolderOpen,
   FolderTree,
-  Bell
+  Bell,
+  MessageCircle,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -92,11 +95,18 @@ interface ExamResultCard {
   student_name: string;
   student_code: string;
   prn?: string;
+  parent_name?: string;
+  parent_phone?: string;
+  parent_email?: string;
   total_obtained: number;
   total_possible: number;
   percentage: number;
   grade: string;
+  rank?: number;
   is_pass: boolean;
+  whatsapp_message?: string;
+  whatsapp_url?: string;
+  whatsapp_configured?: boolean;
 }
 
 interface ExamDetailResponse {
@@ -106,6 +116,7 @@ interface ExamDetailResponse {
   start_date: string;
   end_date: string;
   is_published: boolean;
+  whatsapp_configured?: boolean;
   subjects: ExamPaperDetail[];
   results: ExamResultCard[];
 }
@@ -559,13 +570,24 @@ export const Examinations: React.FC = () => {
 
   // Dispatch Scorecards to Parents on demand
   const [notifyingScorecards, setNotifyingScorecards] = useState(false);
+  const [showWhatsAppScorecardsModal, setShowWhatsAppScorecardsModal] = useState(false);
+  const [sentStudentIds, setSentStudentIds] = useState<Record<string, boolean>>({});
+
   const handleNotifyScorecards = async () => {
     if (!selectedExamId) return;
     setNotifyingScorecards(true);
     setFeedback(null);
     try {
-      await apiClient.post(`/examinations/${selectedExamId}/notify`);
-      setFeedback({ type: 'success', text: 'Scorecard notifications dispatched to parents and students via WhatsApp & Email!' });
+      const res = await apiClient.post(`/examinations/${selectedExamId}/notify`);
+      if (res.data?.whatsapp_configured) {
+        setFeedback({ type: 'success', text: 'Scorecard notifications dispatched to parents and students via WhatsApp & Email!' });
+      } else {
+        setFeedback({
+          type: 'success',
+          text: 'Scorecard report emails dispatched! Opened WhatsApp Scorecards Dispatcher for 1-click messaging.'
+        });
+        setShowWhatsAppScorecardsModal(true);
+      }
     } catch (err: any) {
       setFeedback({
         type: 'error',
@@ -1507,6 +1529,7 @@ export const Examinations: React.FC = () => {
                             <th className="py-3 px-4 sm:px-6 text-right">Percentage</th>
                             <th className="py-3 px-4 sm:px-6 text-center">Grade</th>
                             <th className="py-3 px-4 sm:px-6 text-center">Result</th>
+                            <th className="py-3 px-4 sm:px-6 text-center">Scorecard WhatsApp</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1532,6 +1555,37 @@ export const Examinations: React.FC = () => {
                                 >
                                   {r.is_pass ? 'PASSED' : 'FAILED'}
                                 </span>
+                              </td>
+                              <td className="py-3.5 px-4 sm:px-6 text-center">
+                                <div className="flex items-center justify-center space-x-1.5">
+                                  {r.whatsapp_url ? (
+                                    <a
+                                      href={r.whatsapp_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold flex items-center space-x-1 shadow-2xs transition cursor-pointer"
+                                      title={`Send Scorecard directly to ${r.parent_name || 'Parent'} (${r.parent_phone || ''}) via WhatsApp`}
+                                    >
+                                      <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>WhatsApp</span>
+                                    </a>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 italic">No Mobile</span>
+                                  )}
+                                  {r.whatsapp_message && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(r.whatsapp_message || '');
+                                        setFeedback({ type: 'success', text: `Scorecard message copied to clipboard for ${r.student_name}!` });
+                                      }}
+                                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition cursor-pointer"
+                                      title="Copy Scorecard WhatsApp Message"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -2164,6 +2218,117 @@ export const Examinations: React.FC = () => {
                     <span>Permanently Delete Test</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* WhatsApp Scorecards Dispatcher Modal */}
+      {showWhatsAppScorecardsModal && selectedExamDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">WhatsApp Scorecard Dispatcher</h3>
+                  <p className="text-xs text-slate-500">{selectedExamDetail.name} • {selectedExamDetail.results?.length || 0} Students</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWhatsAppScorecardsModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 flex items-start space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Scorecard reports have been emailed to parents via Brevo.</p>
+                <p className="text-emerald-800 text-[11px] mt-0.5">
+                  Click &quot;Open in WhatsApp&quot; on any student below to deliver their personalized scorecard directly via WhatsApp Web / App with 1 tap.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+              {selectedExamDetail.results?.map((r) => {
+                const isSent = !!sentStudentIds[r.student_id];
+                return (
+                  <div
+                    key={r.student_id}
+                    className={`p-3.5 rounded-xl border transition flex items-center justify-between ${
+                      isSent ? 'bg-emerald-50/40 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-900 text-sm">{r.student_name}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-semibold">
+                          {r.prn || r.student_code}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span>Parent: <strong className="text-slate-700">{r.parent_name || 'Guardian'}</strong></span>
+                        <span>•</span>
+                        <span>Phone: <strong className="text-slate-700">{r.parent_phone || 'None'}</strong></span>
+                        <span>•</span>
+                        <span className="font-bold text-emerald-600">{r.total_obtained}/{r.total_possible} ({r.percentage}%)</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      {r.whatsapp_message && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(r.whatsapp_message || '');
+                            setFeedback({ type: 'success', text: `Scorecard message copied for ${r.student_name}!` });
+                          }}
+                          className="p-2 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl transition cursor-pointer"
+                          title="Copy WhatsApp Scorecard"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      )}
+                      {r.whatsapp_url ? (
+                        <a
+                          href={r.whatsapp_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setSentStudentIds((prev) => ({ ...prev, [r.student_id]: true }))}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition cursor-pointer ${
+                            isSent
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {isSent ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
+                          <span>{isSent ? 'Sent' : 'Open in WhatsApp'}</span>
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">No Phone</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between border-t pt-3">
+              <span className="text-xs text-slate-500">
+                {Object.keys(sentStudentIds).length} of {selectedExamDetail.results?.length || 0} dispatched via WhatsApp
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppScorecardsModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>

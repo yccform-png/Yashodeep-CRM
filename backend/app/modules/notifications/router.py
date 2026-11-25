@@ -113,21 +113,26 @@ async def manual_test_dispatch(
 
     try:
         if channel == "WHATSAPP":
-            # Using sample generic components
-            components = [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": data.sample_name or "Parent / Student"},
-                        {"type": "text", "text": "Test Notification"},
-                        {"type": "text", "text": "Yashodeep Coaching Classes"}
-                    ]
-                }
-            ]
+            # If live Meta API is enabled, use the official pre-approved test template 'hello_world'
+            if meta_whatsapp_client.enabled:
+                tpl_name = "hello_world"
+                tpl_components = []
+            else:
+                tpl_name = "ycc_test_notification"
+                tpl_components = [
+                    {
+                        "type": "body",
+                        "parameters": [
+                            {"type": "text", "text": data.sample_name or "Parent / Student"},
+                            {"type": "text", "text": "Test Notification"},
+                            {"type": "text", "text": "Yashodeep Coaching Classes"}
+                        ]
+                    }
+                ]
             result = await meta_whatsapp_client.send_template_message(
                 to_phone=recipient,
-                template_name="sample_flight_confirmation" if meta_whatsapp_client.enabled else "ycc_test_notification",
-                components=components
+                template_name=tpl_name,
+                components=tpl_components
             )
             outbox_entry.status = "SENT"
             outbox_entry.last_attempted_at = datetime.now(timezone.utc)

@@ -170,8 +170,13 @@ async def test_meta_webhook_receiver(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_manual_test_dispatch_and_outbox(client: AsyncClient, auth_headers: dict):
+async def test_manual_test_dispatch_and_outbox(client: AsyncClient, auth_headers: dict, monkeypatch):
     """Verify manual staff test dispatch records to NotificationOutbox and can be queried."""
+    monkeypatch.setattr(settings, "META_WHATSAPP_ACCESS_TOKEN", None)
+    monkeypatch.setattr(settings, "META_WHATSAPP_ENABLED", False)
+    monkeypatch.setattr(settings, "BREVO_API_KEY", None)
+    monkeypatch.setattr(settings, "BREVO_EMAIL_ENABLED", False)
+
     # 1. Dispatch WhatsApp Test
     wa_resp = await client.post(
         "/api/v1/notifications/test-dispatch",

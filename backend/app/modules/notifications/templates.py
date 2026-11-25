@@ -2,7 +2,31 @@
 Notification Templates Engine for Meta WhatsApp Business & Brevo Transactional Email.
 Provides standard components formatting for Meta Cloud API and responsive HTML templates for Brevo.
 """
+import re
+import urllib.parse
 from typing import Dict, Any, List, Optional
+
+
+def normalize_phone_for_whatsapp(raw_phone: str, default_country_code: str = "91") -> str:
+    """Cleans phone numbers into international digits without leading zeroes or plus symbol."""
+    if not raw_phone:
+        return ""
+    digits = re.sub(r"\D", "", raw_phone)
+    if not digits:
+        return ""
+    if len(digits) == 10:
+        return f"{default_country_code}{digits}"
+    if len(digits) == 11 and digits.startswith("0"):
+        return f"{default_country_code}{digits[1:]}"
+    return digits
+
+
+def build_whatsapp_click_url(phone: str, text: str) -> str:
+    """Builds a https://wa.me/ deep link with pre-filled encoded text."""
+    norm = normalize_phone_for_whatsapp(phone)
+    if not norm:
+        return ""
+    return f"https://wa.me/{norm}?text={urllib.parse.quote(text)}"
 
 
 # -----------------------------------------------------------------------------
@@ -208,6 +232,49 @@ def format_fee_reminder_whatsapp(
     }
 
 
+def format_fee_reminder_whatsapp_text(
+    parent_name: str,
+    installment_number: int,
+    amount: float,
+    student_name: str,
+    due_date: str,
+    invoice_number: Optional[str] = None,
+    course_name: Optional[str] = None,
+    is_overdue: bool = False
+) -> str:
+    """Formatted plain-text message suitable for direct WhatsApp click-to-chat links."""
+    header = "⚠️ *FEE INSTALLMENT OVERDUE NOTICE*" if is_overdue else "🔔 *FEE INSTALLMENT DUE REMINDER*"
+    lines = [
+        header,
+        "🏛️ *Yashodeep Coaching Classes*",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        f"Dear *{parent_name or 'Parent / Guardian'}*,",
+        "",
+        f"This is a {'formal notice regarding an overdue installment' if is_overdue else 'courtesy reminder regarding an upcoming installment payment'} for *{student_name}*.",
+        "",
+        f"👤 *Student:* {student_name}",
+    ]
+    if course_name:
+        lines.append(f"📚 *Course:* {course_name}")
+    if invoice_number:
+        lines.append(f"📋 *Invoice Ref:* {invoice_number}")
+    lines.extend([
+        f"🔢 *Installment:* #{installment_number}",
+        f"📅 *Scheduled Due Date:* {due_date}",
+        f"💰 *Payable Amount:* ₹{amount:,.2f}",
+        "",
+        f"Kindly arrange to clear the dues on or before *{due_date}* to ensure continuous classes and access to academic services.",
+        "",
+        "If you have already completed this payment, please disregard this notification.",
+        "",
+        "Regards,",
+        "*Yashodeep Coaching Classes*",
+        "📞 Contact: +91 9876543210"
+    ])
+    return "\n".join(lines)
+
+
+
 def format_fee_reminder_email(
     parent_name: str,
     student_name: str,
@@ -286,6 +353,52 @@ def format_exam_result_whatsapp(
             }
         ]
     }
+
+
+def format_exam_result_whatsapp_text(
+    parent_name: str,
+    exam_name: str,
+    subject_name: str,
+    student_name: str,
+    marks_obtained: float,
+    max_marks: float,
+    percentage: float,
+    grade: Optional[str] = None,
+    is_pass: Optional[bool] = None,
+    rank: Optional[int] = None
+) -> str:
+    """Formatted plain-text scorecard suitable for direct WhatsApp click-to-chat links."""
+    status_str = "PASSED ✅" if (is_pass if is_pass is not None else percentage >= 35.0) else "NEEDS ATTENTION ⚠️"
+    grade_str = grade or ("A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B+" if percentage >= 70 else ("B" if percentage >= 60 else "C"))))
+
+    lines = [
+        "📊 *ACADEMIC EVALUATION SCORECARD*",
+        "🏛️ *Yashodeep Coaching Classes*",
+        "━━━━━━━━━━━━━━━━━━━━━━",
+        f"Dear *{parent_name or 'Parent / Guardian'}*,",
+        "",
+        f"Official test scorecard for *{student_name}* has been declared:",
+        "",
+        f"👤 *Student Name:* {student_name}",
+        f"📝 *Examination:* {exam_name}",
+        f"📚 *Subject / Paper:* {subject_name}",
+        f"📈 *Marks Obtained:* {marks_obtained:g} / {max_marks:g}",
+        f"🎯 *Percentage:* {percentage:.1f}%",
+        f"🏆 *Grade Awarded:* {grade_str}",
+        f"✨ *Evaluation Status:* {status_str}",
+    ]
+    if rank:
+        lines.append(f"🏅 *Merit Rank in Class:* #{rank}")
+    lines.extend([
+        "",
+        "Keep encouraging the student to excel further! For any academic discussion or performance review, please feel free to visit the institute.",
+        "",
+        "Warm regards,",
+        "*Yashodeep Coaching Classes*",
+        "📞 Contact: +91 9876543210"
+    ])
+    return "\n".join(lines)
+
 
 
 def format_exam_result_email(

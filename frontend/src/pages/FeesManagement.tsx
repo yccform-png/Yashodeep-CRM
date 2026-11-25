@@ -24,7 +24,8 @@ import {
   GraduationCap,
   Users,
   BookOpen,
-  Bell
+  Bell,
+  MessageCircle
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -173,6 +174,28 @@ export const FeesManagement: React.FC = () => {
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [scanningReminders, setScanningReminders] = useState<boolean>(false);
 
+  const handleOpenWhatsAppReminder = async (invoiceId: string, installmentId?: string) => {
+    try {
+      const url = installmentId
+        ? `/fees/invoices/${invoiceId}/whatsapp-url?installment_id=${installmentId}`
+        : `/fees/invoices/${invoiceId}/whatsapp-url`;
+      const res = await apiClient.get(url);
+      if (res.data?.whatsapp_url) {
+        window.open(res.data.whatsapp_url, '_blank');
+      } else {
+        setFeedback({
+          type: 'error',
+          text: 'Parent mobile number not found on record for this student.'
+        });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        text: err?.response?.data?.detail || 'Failed to generate WhatsApp reminder link'
+      });
+    }
+  };
+
   const handleSendReminder = async (invoiceId: string, installmentId?: string, installmentNumber?: number) => {
     const key = installmentId || invoiceId;
     setRemindingId(key);
@@ -180,12 +203,20 @@ export const FeesManagement: React.FC = () => {
       const url = installmentId
         ? `/fees/invoices/${invoiceId}/remind?installment_id=${installmentId}`
         : `/fees/invoices/${invoiceId}/remind`;
-      await apiClient.post(url);
+      const res = await apiClient.post(url);
+      const data = res.data;
+
+      if (data?.whatsapp_url) {
+        window.open(data.whatsapp_url, '_blank');
+      }
+
       setFeedback({
         type: 'success',
-        text: installmentNumber
-          ? `Due reminder for Installment #${installmentNumber} dispatched via WhatsApp & Email!`
-          : `Fee reminder dispatched via WhatsApp & Email!`
+        text: data?.whatsapp_url
+          ? `Due reminder dispatched via Email & opened in WhatsApp for ${data.parent_name || 'Parent'} (${data.parent_phone || ''})!`
+          : (installmentNumber
+              ? `Due reminder for Installment #${installmentNumber} dispatched via Email!`
+              : `Fee reminder dispatched via Email!`)
       });
     } catch (err: any) {
       setFeedback({
@@ -934,6 +965,17 @@ export const FeesManagement: React.FC = () => {
                           {inv.balance_amount > 0 && (
                             <button
                               type="button"
+                              onClick={() => handleOpenWhatsAppReminder(inv.id)}
+                              className="h-8 px-2.5 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold shadow-2xs transition-all inline-flex items-center justify-center gap-1 cursor-pointer"
+                              title="Send fee due reminder directly to parent via WhatsApp"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>WhatsApp</span>
+                            </button>
+                          )}
+                          {inv.balance_amount > 0 && (
+                            <button
+                              type="button"
                               disabled={remindingId === inv.id}
                               onClick={() => handleSendReminder(inv.id)}
                               className="h-8 px-2.5 border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-semibold shadow-2xs transition-all inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
@@ -969,16 +1011,27 @@ export const FeesManagement: React.FC = () => {
                                   {inv.installments.filter((i) => i.status === 'PAID').length} of {inv.installments.length} Paid
                                 </span>
                                 {inv.balance_amount > 0 && (
-                                  <button
-                                    type="button"
-                                    disabled={remindingId === inv.id}
-                                    onClick={() => handleSendReminder(inv.id)}
-                                    className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer disabled:opacity-50"
-                                    title="Send fee due reminder for this invoice via WhatsApp & Email"
-                                  >
-                                    <Bell className="w-3 h-3 text-amber-600" />
-                                    <span>{remindingId === inv.id ? 'Sending...' : 'Remind Due'}</span>
-                                  </button>
+                                  <div className="flex items-center space-x-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenWhatsAppReminder(inv.id)}
+                                      className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer"
+                                      title="Send fee due reminder directly to parent via WhatsApp"
+                                    >
+                                      <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                      <span>WhatsApp</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={remindingId === inv.id}
+                                      onClick={() => handleSendReminder(inv.id)}
+                                      className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer disabled:opacity-50"
+                                      title="Send fee due reminder for this invoice via WhatsApp & Email"
+                                    >
+                                      <Bell className="w-3 h-3 text-amber-600" />
+                                      <span>{remindingId === inv.id ? 'Sending...' : 'Remind Due'}</span>
+                                    </button>
+                                  </div>
                                 )}
                                 {canRestructure && inv.balance_amount > 0 && (
                                   <button
@@ -1040,16 +1093,27 @@ export const FeesManagement: React.FC = () => {
                                     </button>
                                   )}
                                   {inst.status !== 'PAID' && (
-                                    <button
-                                      type="button"
-                                      disabled={remindingId === inst.id}
-                                      onClick={() => handleSendReminder(inv.id, inst.id, inst.installment_number)}
-                                      className="w-full mt-1 py-1 px-2 text-[10px] font-semibold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-md shadow-2xs flex items-center justify-center space-x-1 transition cursor-pointer disabled:opacity-50"
-                                      title="Send Fee Due Reminder via WhatsApp & Email"
-                                    >
-                                      <Bell className="w-3 h-3 text-amber-600" />
-                                      <span>{remindingId === inst.id ? 'Sending...' : 'Send Reminder'}</span>
-                                    </button>
+                                    <div className="flex items-center space-x-1 mt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenWhatsAppReminder(inv.id, inst.id)}
+                                        className="flex-1 py-1 px-1.5 text-[10px] font-semibold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-md shadow-2xs flex items-center justify-center space-x-1 transition cursor-pointer"
+                                        title="Send Due Reminder directly via WhatsApp"
+                                      >
+                                        <MessageCircle className="w-3 h-3 text-emerald-600" />
+                                        <span>WhatsApp</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={remindingId === inst.id}
+                                        onClick={() => handleSendReminder(inv.id, inst.id, inst.installment_number)}
+                                        className="flex-1 py-1 px-1.5 text-[10px] font-semibold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-md shadow-2xs flex items-center justify-center space-x-1 transition cursor-pointer disabled:opacity-50"
+                                        title="Send Fee Due Reminder via Email & WhatsApp"
+                                      >
+                                        <Bell className="w-3 h-3 text-amber-600" />
+                                        <span>{remindingId === inst.id ? 'Sending...' : 'Remind'}</span>
+                                      </button>
+                                    </div>
                                   )}
                                 </div>
                               ))}
