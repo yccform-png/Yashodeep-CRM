@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useAcademicYear } from '../context/AcademicYearContext';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { PaymentReceiptModal } from '../components/PaymentReceiptModal';
 
@@ -55,6 +56,8 @@ interface Invoice {
   student_prn?: string;
   student_code?: string;
   student_mobile?: string;
+  academic_year_id?: string | null;
+  academic_year_name?: string | null;
   class_id?: string | null;
   class_name?: string | null;
   batch_id?: string | null;
@@ -123,6 +126,9 @@ export const FeesManagement: React.FC = () => {
   const { hasRole } = useAuth();
   const canReschedule = hasRole(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
   const canRestructure = hasRole(['SUPER_ADMIN', 'ADMIN']);
+
+  const { selectedAcademicYear, academicYears } = useAcademicYear();
+  const [selectedAyId, setSelectedAyId] = useState<string>('');
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [students, setStudents] = useState<Record<string, StudentOption>>({});
@@ -341,10 +347,21 @@ export const FeesManagement: React.FC = () => {
     }
   };
 
-  const fetchInvoices = async () => {
+  // Sync selectedAyId when global Academic Year changes in Topbar
+  useEffect(() => {
+    if (selectedAcademicYear?.id) {
+      setSelectedAyId(selectedAcademicYear.id);
+    }
+  }, [selectedAcademicYear?.id]);
+
+  const fetchInvoices = async (targetAyId?: string) => {
     try {
       setLoading(true);
       const params: any = {};
+      const ayToUse = targetAyId !== undefined ? targetAyId : (selectedAyId || selectedAcademicYear?.id);
+      if (ayToUse && ayToUse !== 'ALL') {
+        params.academic_year_id = ayToUse;
+      }
       if (statusFilter !== 'ALL') params.status_filter = statusFilter;
       if (selectedClassId !== 'ALL') params.class_id = selectedClassId;
       if (selectedBatchId !== 'ALL') params.batch_id = selectedBatchId;
@@ -386,14 +403,13 @@ export const FeesManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchInvoices();
     fetchStudents();
     fetchAcademicData();
   }, []);
 
   useEffect(() => {
-    fetchInvoices();
-  }, [statusFilter, selectedClassId, selectedBatchId]);
+    fetchInvoices(selectedAyId || selectedAcademicYear?.id);
+  }, [selectedAyId, selectedAcademicYear?.id, statusFilter, selectedClassId, selectedBatchId]);
 
   const openPaymentForInvoice = (inv: Invoice) => {
     setSelectedInvoice(inv);
@@ -496,7 +512,11 @@ export const FeesManagement: React.FC = () => {
   }, [invoices, statusFilter, selectedClassId, selectedBatchId, searchQuery, students]);
 
   // Dynamic Metrics
-  const isFiltered = selectedClassId !== 'ALL' || selectedBatchId !== 'ALL' || statusFilter !== 'ALL' || !!searchQuery.trim();
+  const currentAy = academicYears.find((y) => y.id === selectedAyId) || selectedAcademicYear;
+  const currentAyName = selectedAyId === 'ALL'
+    ? 'All Sessions'
+    : (currentAy?.name || 'Current Session');
+  const isFiltered = (selectedAyId && selectedAyId !== 'ALL' && selectedAcademicYear?.id && selectedAyId !== selectedAcademicYear.id) || selectedClassId !== 'ALL' || selectedBatchId !== 'ALL' || statusFilter !== 'ALL' || !!searchQuery.trim();
   const selectedClassName = classes.find((c) => c.id === selectedClassId)?.name;
   const selectedBatchName = batches.find((b) => b.id === selectedBatchId)?.name;
 
@@ -585,7 +605,7 @@ export const FeesManagement: React.FC = () => {
           </button>
 
           <button
-            onClick={fetchInvoices}
+            onClick={() => fetchInvoices()}
             className="flex items-center space-x-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -617,6 +637,11 @@ export const FeesManagement: React.FC = () => {
         <div className="flex items-center gap-2 p-3 px-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs text-emerald-950 flex-wrap shadow-2xs">
           <Filter className="w-4 h-4 text-emerald-700 shrink-0" />
           <span className="font-semibold text-slate-700">Active Financial Scope:</span>
+          {selectedAyId && (
+            <span className="px-2.5 py-0.5 rounded-lg bg-white border border-emerald-300 font-bold text-emerald-800 shadow-2xs">
+              Session: {currentAyName}
+            </span>
+          )}
           {selectedClassId !== 'ALL' && (
             <span className="px-2.5 py-0.5 rounded-lg bg-white border border-purple-200 font-bold text-purple-800 shadow-2xs">
               Class: {selectedClassName || 'Selected'}
@@ -640,6 +665,7 @@ export const FeesManagement: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              setSelectedAyId(selectedAcademicYear?.id || 'ALL');
               setSelectedClassId('ALL');
               setSelectedBatchId('ALL');
               setStatusFilter('ALL');
@@ -657,7 +683,7 @@ export const FeesManagement: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              {isFiltered ? 'Total Billed (Filtered)' : 'Total Billed (AY 2026-27)'}
+              {isFiltered ? 'Total Billed (Filtered)' : (selectedAyId === 'ALL' ? 'Total Billed (All Sessions)' : `Total Billed (${currentAyName.startsWith('AY') ? currentAyName : `AY ${currentAyName}`})`)}
             </p>
             <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
               <FileText className="w-4 h-4" />
@@ -780,7 +806,29 @@ export const FeesManagement: React.FC = () => {
 
           {/* Academic Class & Batch Filters */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full sm:w-auto sm:flex sm:items-center">
+              {/* Academic Session Filter */}
+              <div className="flex items-center space-x-1.5 min-w-0">
+                <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                <select
+                  value={selectedAyId || 'ALL'}
+                  onChange={(e) => {
+                    const newAy = e.target.value;
+                    setSelectedAyId(newAy);
+                    fetchInvoices(newAy);
+                  }}
+                  className="w-full sm:w-auto sm:max-w-[190px] text-xs font-semibold py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 truncate min-w-0 cursor-pointer"
+                  title="Filter invoices by Academic Session"
+                >
+                  <option value="ALL">All Academic Sessions</option>
+                  {academicYears.map((ay) => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name} {ay.is_current ? '• [CURRENT]' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Class Filter */}
               <div className="flex items-center space-x-1.5 min-w-0">
                 <GraduationCap className="w-4 h-4 text-purple-600 shrink-0" />
@@ -899,6 +947,11 @@ export const FeesManagement: React.FC = () => {
                                 {inv.batch_name && (
                                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60">
                                     {inv.batch_name}
+                                  </span>
+                                )}
+                                {inv.academic_year_name && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                    {inv.academic_year_name}
                                   </span>
                                 )}
                               </div>

@@ -84,6 +84,8 @@ class InvoiceResponse(BaseModel):
     paid_amount: Decimal
     balance_amount: Decimal
     status: str
+    academic_year_id: Optional[uuid.UUID] = None
+    academic_year_name: Optional[str] = None
     class_id: Optional[uuid.UUID] = None
     class_name: Optional[str] = None
     batch_id: Optional[uuid.UUID] = None

@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status, BackgroundTasks, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, and_, func
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
@@ -14,7 +14,7 @@ from app.core.exceptions import NotFoundException, BadRequestException, Conflict
 from app.core.cache import cache_service, CacheKeys, CacheInvalidator
 from app.models.user import User
 from app.models.institute import Institute
-from app.models.academic import CourseVersion, Subject, SubjectGroup, SubjectGroupItem, Class, Course, Batch, BatchStudent
+from app.models.academic import CourseVersion, Subject, SubjectGroup, SubjectGroupItem, Class, Course, Batch, BatchStudent, AcademicYear
 from app.models.service import ServicePlan
 from app.models.student import Student, Guardian, StudentGuardian
 from app.models.enrollment import Enrollment
@@ -130,6 +130,7 @@ async def preview_fee(
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
 async def list_invoices(
+    academic_year_id: Optional[uuid.UUID] = None,
     student_id: Optional[uuid.UUID] = None,
     status_filter: Optional[str] = None,
     class_id: Optional[uuid.UUID] = None,
@@ -144,10 +145,26 @@ async def list_invoices(
             selectinload(Invoice.items),
             selectinload(Invoice.installment_plan).selectinload(InstallmentPlan.installments),
             selectinload(Invoice.enrollment).selectinload(Enrollment.academic_class),
+            selectinload(Invoice.enrollment).selectinload(Enrollment.academic_year),
             selectinload(Invoice.enrollment).selectinload(Enrollment.batch),
             selectinload(Invoice.enrollment).selectinload(Enrollment.course)
         )
     )
+    if academic_year_id:
+        target_ay = await db.get(AcademicYear, academic_year_id)
+        if target_ay:
+            stmt = stmt.where(
+                or_(
+                    Invoice.enrollment.has(Enrollment.academic_year_id == academic_year_id),
+                    and_(
+                        Invoice.enrollment_id.is_(None),
+                        Invoice.issue_date >= target_ay.start_date,
+                        Invoice.issue_date <= target_ay.end_date
+                    )
+                )
+            )
+        else:
+            stmt = stmt.where(Invoice.enrollment.has(Enrollment.academic_year_id == academic_year_id))
     if student_id:
         stmt = stmt.where(Invoice.student_id == student_id)
     if status_filter and status_filter != "ALL":
@@ -226,6 +243,9 @@ async def list_invoices(
             if not crs_name and assigned_batch.course:
                 crs_name = assigned_batch.course.name
 
+        ay_id = inv.enrollment.academic_year_id if inv.enrollment else None
+        ay_name = inv.enrollment.academic_year.name if (inv.enrollment and inv.enrollment.academic_year) else None
+
         output.append(
             InvoiceResponse(
                 id=inv.id,
@@ -234,6 +254,8 @@ async def list_invoices(
                 student_prn=stu_prn,
                 student_code=stu_code,
                 student_mobile=stu_mob,
+                academic_year_id=ay_id,
+                academic_year_name=ay_name,
                 class_id=c_id,
                 class_name=c_name,
                 batch_id=b_id,
