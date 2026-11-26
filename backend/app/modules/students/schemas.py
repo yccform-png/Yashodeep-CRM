@@ -1,4 +1,5 @@
 import uuid
+from enum import Enum
 from typing import Optional, List, Any
 from datetime import date, datetime
 from decimal import Decimal
@@ -181,3 +182,22 @@ class StudentProfileResponse(BaseModel):
     examinations: List[dict]
     documents: List[dict]
     activity_history: List[dict]
+
+
+class ResetPasswordTarget(str, Enum):
+    STUDENT = "STUDENT"
+    PARENT = "PARENT"
+    BOTH = "BOTH"
+
+
+class ResetPasswordToDobRequest(BaseModel):
+    target: ResetPasswordTarget = ResetPasswordTarget.BOTH
+
+
+class ResetPasswordToDobResponse(BaseModel):
+    message: str
+    target: str
+    student_name: str
+    default_password_hint: str
+    reset_accounts: List[str]
+

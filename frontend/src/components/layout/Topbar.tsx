@@ -1,6 +1,7 @@
-import React from 'react';
-import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap, KeyRound } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { ChangePasswordModal } from '../ChangePasswordModal';
 
 interface TopbarProps {
   onToggleMobileNav?: () => void;
@@ -8,6 +9,7 @@ interface TopbarProps {
 
 export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
   const { user } = useAuth();
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between flex-shrink-0 z-30">
@@ -61,6 +63,16 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
           <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-2 right-2 ring-2 ring-white"></span>
         </button>
 
+        {/* Change Password Trigger */}
+        <button
+          onClick={() => setIsChangePasswordOpen(true)}
+          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+          title="Change Account Password"
+          aria-label="Change Password"
+        >
+          <KeyRound className="w-4 h-4" />
+        </button>
+
         {/* User Pill */}
         <div className="flex items-center space-x-2 sm:space-x-2.5 pl-1.5 sm:pl-2 border-l border-slate-200">
           <div className="text-right hidden md:block">
@@ -74,6 +86,14 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
           </div>
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      {isChangePasswordOpen && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+        />
+      )}
     </header>
   );
 };

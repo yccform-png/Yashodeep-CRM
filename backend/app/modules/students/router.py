@@ -8,10 +8,14 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
+from app.core.security import get_password_hash
 from app.core.exceptions import NotFoundException, ConflictException, BadRequestException
 from app.core.cache import cache_service, CacheKeys
 from app.models.user import User
-from app.models.student import Student, Guardian, StudentGuardian, StudentDocument
+from app.models.student import (
+    Student, Guardian, StudentGuardian, StudentDocument,
+    StudentUserAccount, GuardianUserAccount
+)
 from app.models.academic import BatchStudent, BatchSubject, Batch, Subject, Teacher, Course, CourseVersion, CourseVersionSubject
 from app.models.enrollment import Enrollment, EnrollmentSubject
 from app.models.service import StudentService, ServicePlan, ServiceType
@@ -22,7 +26,8 @@ from app.models.attendance import AttendanceRecord, AttendanceSession
 from app.models.examination import ExamMarks, ExamSubject, Examination, ExamResult
 from app.modules.students.schemas import (
     StudentCreate, StudentUpdate, StudentListResponse, StudentProfileResponse,
-    GuardianCreate, GuardianResponse
+    GuardianCreate, GuardianResponse,
+    ResetPasswordTarget, ResetPasswordToDobRequest, ResetPasswordToDobResponse
 )
 from app.modules.students.service import generate_student_code_and_prn
 
@@ -716,3 +721,113 @@ async def delete_student(
     await cache_service.delete_pattern(CacheKeys.study_room_pattern())
     await cache_service.delete_pattern(CacheKeys.hostel_pattern())
     return None
+
+
+@router.post("/{student_id}/reset-password-to-dob", response_model=ResetPasswordToDobResponse)
+async def reset_student_password_to_dob(
+    student_id: uuid.UUID,
+    payload: ResetPasswordToDobRequest = ResetPasswordToDobRequest(),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Super Admin single-click credential reset.
+    Recalculates the student's date of birth in DDMMYYYY format (e.g. 17092002)
+    and resets the password for Student, Parent, or Both accounts.
+    """
+    student = await db.get(Student, student_id)
+    if not student:
+        raise NotFoundException(f"Student with ID {student_id} not found")
+
+    if not student.date_of_birth:
+        raise BadRequestException("Student does not have a date of birth recorded. Please update their profile first.")
+
+    dob_pwd = student.date_of_birth.strftime("%d%m%Y")
+    hashed_pwd = get_password_hash(dob_pwd)
+    reset_accounts: List[str] = []
+
+    # 1. Reset Student Account
+    if payload.target in (ResetPasswordTarget.STUDENT, ResetPasswordTarget.BOTH):
+        stu_user = None
+        if student.user_id:
+            stu_user = await db.get(User, student.user_id)
+        if not stu_user:
+            sua_stmt = select(User).join(StudentUserAccount, StudentUserAccount.user_id == User.id).where(StudentUserAccount.student_id == student.id)
+            stu_user = (await db.execute(sua_stmt)).scalars().first()
+        if not stu_user and student.email:
+            stu_user = (await db.execute(select(User).where(User.email == student.email))).scalars().first()
+        if not stu_user and student.mobile:
+            stu_user = (await db.execute(select(User).where(User.mobile == student.mobile))).scalars().first()
+
+        if stu_user:
+            stu_user.hashed_password = hashed_pwd
+            stu_user.is_active = True
+            reset_accounts.append(f"Student ({stu_user.email or stu_user.mobile})")
+        else:
+            # Auto-provision if missing
+            new_stu_user = User(
+                institute_id=current_user.institute_id,
+                email=student.email or f"{student.student_code.lower()}@yashodeep.local",
+                mobile=student.mobile,
+                hashed_password=hashed_pwd,
+                first_name=student.first_name,
+                last_name=student.last_name,
+                user_type="STUDENT",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(new_stu_user)
+            await db.flush()
+            student.user_id = new_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=new_stu_user.id, is_primary=True))
+            reset_accounts.append(f"Student ({new_stu_user.email or new_stu_user.mobile})")
+
+    # 2. Reset Parent Account(s)
+    if payload.target in (ResetPasswordTarget.PARENT, ResetPasswordTarget.BOTH):
+        sg_stmt = select(Guardian).join(StudentGuardian, StudentGuardian.guardian_id == Guardian.id).where(StudentGuardian.student_id == student.id)
+        guardians = (await db.execute(sg_stmt)).scalars().all()
+        for g in guardians:
+            g_user = None
+            if g.user_id:
+                g_user = await db.get(User, g.user_id)
+            if not g_user:
+                gua_stmt = select(User).join(GuardianUserAccount, GuardianUserAccount.user_id == User.id).where(GuardianUserAccount.guardian_id == g.id)
+                g_user = (await db.execute(gua_stmt)).scalars().first()
+            if not g_user and g.mobile:
+                g_user = (await db.execute(select(User).where(User.mobile == g.mobile))).scalars().first()
+            if not g_user and g.email:
+                g_user = (await db.execute(select(User).where(User.email == g.email))).scalars().first()
+
+            if g_user:
+                g_user.hashed_password = hashed_pwd
+                g_user.is_active = True
+                reset_accounts.append(f"Parent ({g.first_name}: {g_user.mobile or g_user.email})")
+            else:
+                # Auto-provision if missing
+                new_g_user = User(
+                    institute_id=current_user.institute_id,
+                    email=g.email or f"guardian_{student.student_code.lower()}@yashodeep.local",
+                    mobile=g.mobile,
+                    hashed_password=hashed_pwd,
+                    first_name=g.first_name,
+                    last_name=g.last_name or student.last_name,
+                    user_type="PARENT",
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(new_g_user)
+                await db.flush()
+                g.user_id = new_g_user.id
+                db.add(GuardianUserAccount(guardian_id=g.id, user_id=new_g_user.id, is_primary=True))
+                reset_accounts.append(f"Parent ({g.first_name}: {new_g_user.mobile or new_g_user.email})")
+
+    await db.commit()
+
+    return ResetPasswordToDobResponse(
+        message="Password successfully reset to default Date of Birth (DDMMYYYY)",
+        target=payload.target.value,
+        student_name=f"{student.first_name} {student.last_name}",
+        default_password_hint=dob_pwd,
+        reset_accounts=reset_accounts
+    )
+

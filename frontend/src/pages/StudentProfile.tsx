@@ -36,7 +36,9 @@ import {
   Trash2,
   School,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  KeyRound,
+  Lock
 } from 'lucide-react';
 import api from '../api/client';
 import { EditStudentModal } from '../components/EditStudentModal';
@@ -44,6 +46,8 @@ import { DeleteStudentModal } from '../components/DeleteStudentModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { PaymentReceiptModal } from '../components/PaymentReceiptModal';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
+import { ResetPasswordToDobModal } from '../components/ResetPasswordToDobModal';
+import { ChangePasswordModal } from '../components/ChangePasswordModal';
 import { useAuth } from '../context/AuthContext';
 
 export const StudentProfile: React.FC = () => {
@@ -96,6 +100,8 @@ export const StudentProfile: React.FC = () => {
   // Modals & Feedback
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResetDobModalOpen, setIsResetDobModalOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [feedbackNotice, setFeedbackNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Mid-Session Skill Course Enrollment
@@ -503,6 +509,16 @@ export const StudentProfile: React.FC = () => {
                   <Trash2 className="w-3.5 h-3.5 text-red-600" />
                   <span>Delete</span>
                 </button>
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => setIsResetDobModalOpen(true)}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 hover:bg-amber-100 transition shadow-xs cursor-pointer"
+                    title="Super Admin: Reset Student & Parent Credentials to Default DOB"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Reset to Default (DOB)</span>
+                  </button>
+                )}
                 <Link
                   to="/students"
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition shadow-xs"
@@ -512,6 +528,16 @@ export const StudentProfile: React.FC = () => {
                   <span>Registry</span>
                 </Link>
               </>
+            )}
+            {isStudentOrParent && (
+              <button
+                onClick={() => setIsChangePasswordOpen(true)}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition shadow-xs cursor-pointer"
+                title="Change your account password"
+              >
+                <Lock className="w-3.5 h-3.5 text-blue-600" />
+                <span>Change Password</span>
+              </button>
             )}
             <button
               onClick={() => setIsAdmissionFormOpen(true)}
@@ -2021,6 +2047,35 @@ export const StudentProfile: React.FC = () => {
           onClose={() => setIsDeleteModalOpen(false)}
           onSuccess={() => {
             navigate('/students', { replace: true });
+          }}
+        />
+      )}
+
+      {/* Super Admin Reset Password to DOB Modal */}
+      {isResetDobModalOpen && (
+        <ResetPasswordToDobModal
+          isOpen={isResetDobModalOpen}
+          student={{ ...overview, id }}
+          onClose={() => setIsResetDobModalOpen(false)}
+          onSuccess={() => {
+            setFeedbackNotice({
+              type: 'success',
+              message: 'Credentials successfully reset to student Date of Birth (DDMMYYYY).'
+            });
+          }}
+        />
+      )}
+
+      {/* Change Password Modal */}
+      {isChangePasswordOpen && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordOpen}
+          onClose={() => setIsChangePasswordOpen(false)}
+          onSuccess={() => {
+            setFeedbackNotice({
+              type: 'success',
+              message: 'Your account password has been updated successfully.'
+            });
           }}
         />
       )}

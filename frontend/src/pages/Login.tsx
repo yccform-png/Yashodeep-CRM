@@ -202,6 +202,16 @@ export const Login: React.FC = () => {
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </form>
+
+        {/* Assistance / Forgot Password Notice */}
+        <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Forgot your password?{' '}
+            <span className="text-slate-300 font-medium">
+              Please contact the Institute Super Admin to reset your credentials to your default Date of Birth.
+            </span>
+          </p>
+        </div>
       </div>
     </div>
   );
