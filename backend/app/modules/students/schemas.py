@@ -165,6 +165,13 @@ class StudentListResponse(BaseModel):
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
 
+    # Academic Session Scope Details
+    enrollment_status: Optional[str] = None
+    promotion_status: Optional[str] = None
+    class_name: Optional[str] = None
+    course_name: Optional[str] = None
+    batch_name: Optional[str] = None
+
     class Config:
         from_attributes = True
 

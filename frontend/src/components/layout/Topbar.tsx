@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap, KeyRound } from 'lucide-react';
+import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap, KeyRound, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { ChangePasswordModal } from '../ChangePasswordModal';
 
 interface TopbarProps {
@@ -9,7 +10,9 @@ interface TopbarProps {
 
 export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
   const { user } = useAuth();
+  const { academicYears, selectedAcademicYear, setSelectedAcademicYear } = useAcademicYear();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isAyMenuOpen, setIsAyMenuOpen] = useState(false);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between flex-shrink-0 z-30">
@@ -48,10 +51,78 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
 
       {/* Right Utility Widgets */}
       <div className="flex items-center space-x-2 sm:space-x-4">
-        {/* Academic Year Active Badge */}
-        <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-medium text-slate-700 border border-slate-200">
-          <Calendar className="w-3.5 h-3.5 text-slate-500" />
-          <span>AY: <strong className="text-slate-900">2026–2027</strong></span>
+        {/* Academic Year Active Switcher */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsAyMenuOpen(!isAyMenuOpen)}
+            className="flex items-center space-x-1.5 sm:space-x-2 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 rounded-xl text-xs font-medium text-slate-700 border border-slate-200 transition cursor-pointer"
+            title="Click to Switch Academic Year"
+          >
+            <Calendar className="w-3.5 h-3.5 text-blue-600" />
+            <span className="hidden sm:inline text-slate-500">AY:</span>
+            <strong className="text-slate-900 font-bold">
+              {selectedAcademicYear ? selectedAcademicYear.name : 'Loading...'}
+            </strong>
+            {selectedAcademicYear?.is_current && (
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 hidden md:inline">
+                CURRENT
+              </span>
+            )}
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+
+          {isAyMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setIsAyMenuOpen(false)} />
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-40 animate-in fade-in zoom-in-95">
+                <div className="px-3 py-1.5 border-b border-slate-100">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Switch Academic Session
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Filters students, batches, and records
+                  </p>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1 divide-y divide-slate-50">
+                  {academicYears.map((ay) => {
+                    const isSelected = selectedAcademicYear?.id === ay.id;
+                    return (
+                      <div
+                        key={ay.id}
+                        className={`px-3 py-2.5 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${
+                          isSelected ? 'bg-blue-50/70' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedAcademicYear(ay);
+                          setIsAyMenuOpen(false);
+                        }}
+                      >
+                        <div>
+                          <div className="flex items-center space-x-1.5">
+                            <span className={`text-xs font-bold ${isSelected ? 'text-blue-900' : 'text-slate-800'}`}>
+                              {ay.name}
+                            </span>
+                            {ay.is_current && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Active Current
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {ay.code} ({ay.start_date.substring(0, 4)}–{ay.end_date.substring(0, 4)})
+                          </span>
+                        </div>
+                        {isSelected && (
+                          <Check className="w-4 h-4 text-blue-600" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Notifications */}

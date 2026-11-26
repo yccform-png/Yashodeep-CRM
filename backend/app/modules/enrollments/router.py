@@ -1710,18 +1710,39 @@ async def process_bulk_cohort_promotion(
 
             # Determine Target Batch (auto-match division from old batch or override)
             assigned_batch_id = item.override_batch_id
-            if not assigned_batch_id:
-                cur_bs_stmt = (
-                    select(BatchStudent)
-                    .options(selectinload(BatchStudent.batch))
-                    .where(BatchStudent.student_id == student.id, BatchStudent.batch_id == data.source_batch_id)
-                )
-                cur_bs = (await db.execute(cur_bs_stmt)).scalar_one_or_none()
-                cur_div = cur_bs.batch.division if cur_bs and cur_bs.batch else "A"
+            cur_bs_stmt = (
+                select(BatchStudent)
+                .options(selectinload(BatchStudent.batch))
+                .where(BatchStudent.student_id == student.id, BatchStudent.batch_id == data.source_batch_id)
+            )
+            cur_bs = (await db.execute(cur_bs_stmt)).scalar_one_or_none()
+            if cur_bs:
+                cur_bs.status = "COMPLETED"
 
+            cur_div = cur_bs.batch.division if cur_bs and cur_bs.batch else "A"
+
+            if not assigned_batch_id:
                 matched_batch = next((b for b in target_batches if b.division == cur_div), None)
                 if not matched_batch and target_batches:
                     matched_batch = target_batches[0]
+                elif not matched_batch and target_course:
+                    # Auto-provision target batch for the target academic year
+                    new_b_code = f"BAT-{target_ay.name[:4]}-{target_course.code or 'CRS'}-{cur_div}"[:50]
+                    matched_batch = Batch(
+                        course_id=target_course.id,
+                        academic_year_id=target_ay.id,
+                        name=f"{target_course.name} - Division {cur_div}",
+                        code=new_b_code,
+                        division=cur_div,
+                        max_capacity=60,
+                        start_date=target_ay.start_date or date.today(),
+                        end_date=target_ay.end_date or date.today(),
+                        is_active=True
+                    )
+                    db.add(matched_batch)
+                    await db.flush()
+                    target_batches.append(matched_batch)
+
                 if matched_batch:
                     assigned_batch_id = matched_batch.id
 

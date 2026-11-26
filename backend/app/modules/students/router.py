@@ -42,10 +42,24 @@ async def list_students(
     search: Optional[str] = None,
     status_filter: Optional[str] = None,
     gender_filter: Optional[str] = None,
+    academic_year_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(Student)
-    count_stmt = select(func.count(Student.id))
+    if academic_year_id:
+        stmt = (
+            stmt
+            .join(Enrollment, Enrollment.student_id == Student.id)
+            .where(Enrollment.academic_year_id == academic_year_id)
+            .distinct()
+        )
+        count_stmt = (
+            select(func.count(func.distinct(Student.id)))
+            .join(Enrollment, Enrollment.student_id == Student.id)
+            .where(Enrollment.academic_year_id == academic_year_id)
+        )
+    else:
+        count_stmt = select(func.count(Student.id))
 
     if search:
         term = f"%{search}%"
@@ -71,9 +85,68 @@ async def list_students(
     total_count = (await db.execute(count_stmt)).scalar() or 0
     response.headers["X-Total-Count"] = str(total_count)
 
-    stmt = stmt.offset(skip).limit(limit).order_by(Student.created_at.desc())
+    stmt = (
+        stmt
+        .options(
+            selectinload(Student.enrollments).selectinload(Enrollment.academic_class),
+            selectinload(Student.enrollments).selectinload(Enrollment.course),
+            selectinload(Student.enrollments).selectinload(Enrollment.batch),
+        )
+        .offset(skip)
+        .limit(limit)
+        .order_by(Student.created_at.desc())
+    )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    students = result.scalars().all()
+
+    out = []
+    for s in students:
+        target_enr = None
+        if academic_year_id:
+            target_enr = next((e for e in (s.enrollments or []) if e.academic_year_id == academic_year_id), None)
+        if not target_enr and s.enrollments:
+            target_enr = next((e for e in s.enrollments if e.status == "ACTIVE"), s.enrollments[0])
+
+        out.append(
+            StudentListResponse(
+                id=s.id,
+                student_code=s.student_code,
+                prn=s.prn,
+                first_name=s.first_name,
+                middle_name=s.middle_name,
+                last_name=s.last_name,
+                date_of_birth=s.date_of_birth,
+                gender=s.gender,
+                mobile=s.mobile,
+                email=s.email,
+                status=s.status,
+                admission_date=s.admission_date,
+                blood_group=s.blood_group,
+                institution_type=s.institution_type,
+                school_college_name=s.school_college_name,
+                education_board=s.education_board,
+                previous_percentage=float(s.previous_percentage) if s.previous_percentage is not None else None,
+                aadhar_number=s.aadhar_number,
+                category=s.category,
+                village=s.village,
+                taluka=s.taluka,
+                district=s.district,
+                address_line1=s.address_line1,
+                address_line2=s.address_line2,
+                city=s.city,
+                state=s.state,
+                pincode=s.pincode,
+                emergency_contact_name=s.emergency_contact_name,
+                emergency_contact_phone=s.emergency_contact_phone,
+                emergency_contact_relation=s.emergency_contact_relation,
+                enrollment_status=target_enr.status if target_enr else s.status,
+                promotion_status=target_enr.promotion_status if target_enr else None,
+                class_name=target_enr.academic_class.name if target_enr and target_enr.academic_class else None,
+                course_name=target_enr.course.name if target_enr and target_enr.course else None,
+                batch_name=target_enr.batch.name if target_enr and target_enr.batch else None,
+            )
+        )
+    return out
 
 
 @router.post("", response_model=StudentListResponse, status_code=status.HTTP_201_CREATED)

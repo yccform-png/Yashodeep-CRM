@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { AcademicYearProvider } from './context/AcademicYearContext';
 import { MainLayout } from './components/layout/MainLayout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
@@ -52,19 +53,20 @@ const RoleBasedHomeRedirect: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/login" element={<Login />} />
+      <AcademicYearProvider>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
 
-        {/* Authenticated ERP Application */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }
-        >
+          {/* Authenticated ERP Application */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
           {/* Default entry point: Role-based landing */}
           <Route index element={<RoleBasedHomeRedirect />} />
 
@@ -194,6 +196,7 @@ export const App: React.FC = () => {
           <Route path="*" element={<RoleBasedHomeRedirect />} />
         </Route>
       </Routes>
+      </AcademicYearProvider>
     </BrowserRouter>
   );
 };

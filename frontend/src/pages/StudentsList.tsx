@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Search, UserPlus, Filter, ArrowUpRight, ChevronLeft, ChevronRight, X, Edit3, Trash2, CheckCircle2, Printer } from 'lucide-react';
+import { Users, Search, UserPlus, Filter, ArrowUpRight, ChevronLeft, ChevronRight, X, Edit3, Trash2, CheckCircle2, Printer, Calendar } from 'lucide-react';
 import api from '../api/client';
+import { useAcademicYear } from '../context/AcademicYearContext';
 import { EditStudentModal } from '../components/EditStudentModal';
 import { DeleteStudentModal } from '../components/DeleteStudentModal';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
 
 export const StudentsList: React.FC = () => {
+  const { academicYears, selectedAcademicYear } = useAcademicYear();
+  const [selectedAyFilter, setSelectedAyFilter] = useState<string>('');
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -14,6 +17,13 @@ export const StudentsList: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Sync with global academic year
+  useEffect(() => {
+    if (selectedAcademicYear && !selectedAyFilter) {
+      setSelectedAyFilter(selectedAcademicYear.id);
+    }
+  }, [selectedAcademicYear]);
 
   // Edit & Delete modal states
   const [studentToEdit, setStudentToEdit] = useState<any | null>(null);
@@ -23,7 +33,13 @@ export const StudentsList: React.FC = () => {
 
   const isInitialMount = useRef(true);
 
-  const fetchStudents = async (currentPage = page, currentSearch = search, currentGender = genderFilter, currentPageSize = pageSize) => {
+  const fetchStudents = async (
+    currentPage = page,
+    currentSearch = search,
+    currentGender = genderFilter,
+    currentAy = selectedAyFilter,
+    currentPageSize = pageSize
+  ) => {
     setLoading(true);
     try {
       const skip = (currentPage - 1) * currentPageSize;
@@ -32,7 +48,8 @@ export const StudentsList: React.FC = () => {
           skip,
           limit: currentPageSize,
           search: currentSearch.trim() || undefined,
-          gender_filter: currentGender || undefined
+          gender_filter: currentGender || undefined,
+          academic_year_id: currentAy || undefined
         }
       });
       setStudents(res.data);
@@ -50,10 +67,10 @@ export const StudentsList: React.FC = () => {
     }
   };
 
-  // Initial load
+  // Initial load & filter change
   useEffect(() => {
-    fetchStudents(page, search, genderFilter, pageSize);
-  }, [page, genderFilter, pageSize]);
+    fetchStudents(page, search, genderFilter, selectedAyFilter, pageSize);
+  }, [page, genderFilter, selectedAyFilter, pageSize]);
 
   // Real-time debounced live search
   useEffect(() => {
@@ -63,7 +80,7 @@ export const StudentsList: React.FC = () => {
     }
     const timer = setTimeout(() => {
       setPage(1);
-      fetchStudents(1, search, genderFilter, pageSize);
+      fetchStudents(1, search, genderFilter, selectedAyFilter, pageSize);
     }, 300);
 
     return () => clearTimeout(timer);
@@ -72,13 +89,13 @@ export const StudentsList: React.FC = () => {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    fetchStudents(1, search, genderFilter, pageSize);
+    fetchStudents(1, search, genderFilter, selectedAyFilter, pageSize);
   };
 
   const handleClearSearch = () => {
     setSearch('');
     setPage(1);
-    fetchStudents(1, '', genderFilter, pageSize);
+    fetchStudents(1, '', genderFilter, selectedAyFilter, pageSize);
   };
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -102,7 +119,15 @@ export const StudentsList: React.FC = () => {
     return pages;
   };
 
-  const renderStatusBadge = (status: string) => {
+  const renderStatusBadge = (s: any) => {
+    if (s.promotion_status === 'PROMOTED_TO_NEXT') {
+      return (
+        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200" title="Promoted to next class in upcoming year">
+          ✨ Promoted to Next
+        </span>
+      );
+    }
+    const status = s.enrollment_status || s.status;
     switch (status) {
       case 'PROVISIONAL_TRIAL':
         return (
@@ -118,8 +143,14 @@ export const StudentsList: React.FC = () => {
         );
       case 'ACTIVE':
         return (
-          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             ACTIVE
+          </span>
+        );
+      case 'COMPLETED':
+        return (
+          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+            COMPLETED
           </span>
         );
       case 'SUSPENDED':
@@ -201,20 +232,43 @@ export const StudentsList: React.FC = () => {
           )}
         </form>
 
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <select
-            value={genderFilter}
-            onChange={(e) => {
-              setGenderFilter(e.target.value);
-              setPage(1);
-            }}
-            className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-          >
-            <option value="">All Genders</option>
-            <option value="MALE">Male (Boys)</option>
-            <option value="FEMALE">Female (Girls)</option>
-          </select>
+        <div className="flex items-center space-x-2 w-full sm:w-auto flex-wrap gap-y-2">
+          {/* Academic Session Filter */}
+          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <select
+              value={selectedAyFilter}
+              onChange={(e) => {
+                setSelectedAyFilter(e.target.value);
+                setPage(1);
+              }}
+              className="bg-transparent text-xs text-slate-800 font-semibold focus:outline-none cursor-pointer py-1.5"
+            >
+              <option value="">All Academic Years</option>
+              {academicYears.map((ay) => (
+                <option key={ay.id} value={ay.id}>
+                  AY: {ay.name} {ay.is_current ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Gender Filter */}
+          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+            <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <select
+              value={genderFilter}
+              onChange={(e) => {
+                setGenderFilter(e.target.value);
+                setPage(1);
+              }}
+              className="bg-transparent text-xs text-slate-700 focus:outline-none cursor-pointer py-1.5"
+            >
+              <option value="">All Genders</option>
+              <option value="MALE">Male (Boys)</option>
+              <option value="FEMALE">Female (Girls)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -229,7 +283,7 @@ export const StudentsList: React.FC = () => {
           <div className="p-14 text-center text-xs text-slate-400 space-y-2">
             <Users className="w-8 h-8 text-slate-300 mx-auto" />
             <p className="font-semibold text-slate-600">No students found</p>
-            <p className="text-[11px] text-slate-400">Try adjusting your search criteria or gender filter.</p>
+            <p className="text-[11px] text-slate-400">Try adjusting your search criteria, academic year, or gender filter.</p>
           </div>
         ) : (
           <>
@@ -240,10 +294,11 @@ export const StudentsList: React.FC = () => {
                   <tr>
                     <th className="p-3.5 pl-5">PRN</th>
                     <th className="p-3.5">Student Name</th>
+                    <th className="p-3.5">Enrolled Class</th>
                     <th className="p-3.5">Gender</th>
                     <th className="p-3.5">Contact Phone</th>
                     <th className="p-3.5">Admission Date</th>
-                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Session Status</th>
                     <th className="p-3.5 pr-5 text-right">Action</th>
                   </tr>
                 </thead>
@@ -256,6 +311,20 @@ export const StudentsList: React.FC = () => {
                       <td className="p-3.5 font-semibold text-slate-900">
                         {s.first_name} {s.last_name}
                       </td>
+                      <td className="p-3.5">
+                        {s.class_name ? (
+                          <div>
+                            <span className="font-bold text-slate-900">{s.class_name}</span>
+                            {s.course_name && (
+                              <p className="text-[10px] text-slate-400 truncate max-w-[170px]" title={s.course_name}>
+                                {s.course_name}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic">Not Enrolled</span>
+                        )}
+                      </td>
                       <td className="p-3.5 text-slate-600">
                         <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold ${s.gender === 'FEMALE' ? 'bg-pink-50 text-pink-700 border border-pink-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
                           {s.gender === 'FEMALE' ? 'Female' : 'Male'}
@@ -264,7 +333,7 @@ export const StudentsList: React.FC = () => {
                       <td className="p-3.5 text-slate-600 font-mono text-[11px]">{s.mobile || '—'}</td>
                       <td className="p-3.5 text-slate-500 font-mono text-[11px]">{s.admission_date || '—'}</td>
                       <td className="p-3.5">
-                        {renderStatusBadge(s.status)}
+                        {renderStatusBadge(s)}
                       </td>
                       <td className="p-3.5 pr-5 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
@@ -317,8 +386,13 @@ export const StudentsList: React.FC = () => {
                       <h4 className="font-bold text-sm text-slate-900 mt-0.5">
                         {s.first_name} {s.last_name}
                       </h4>
+                      {s.class_name && (
+                        <p className="text-xs text-blue-700 font-semibold mt-0.5">
+                          {s.class_name} {s.course_name ? `• ${s.course_name}` : ''}
+                        </p>
+                      )}
                     </div>
-                    {renderStatusBadge(s.status)}
+                    {renderStatusBadge(s)}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 font-mono">
@@ -455,7 +529,7 @@ export const StudentsList: React.FC = () => {
               type: 'success',
               message: `Student "${updated.first_name} ${updated.last_name}" updated successfully.`
             });
-            fetchStudents(page, search, genderFilter, pageSize);
+            fetchStudents(page, search, genderFilter, selectedAyFilter, pageSize);
             setTimeout(() => setFeedbackNotice(null), 4000);
           }}
         />
@@ -472,7 +546,7 @@ export const StudentsList: React.FC = () => {
               type: 'success',
               message: `Student record deleted successfully.`
             });
-            fetchStudents(page, search, genderFilter, pageSize);
+            fetchStudents(page, search, genderFilter, selectedAyFilter, pageSize);
             setTimeout(() => setFeedbackNotice(null), 4000);
           }}
         />

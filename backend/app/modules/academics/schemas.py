@@ -329,6 +329,8 @@ class BatchStudentRosterItem(BaseModel):
     roll_number: Optional[int] = None
     status: str
     enrolled_at: date
+    promotion_status: Optional[str] = None
+    enrollment_status: Optional[str] = None
 
     class Config:
         from_attributes = True

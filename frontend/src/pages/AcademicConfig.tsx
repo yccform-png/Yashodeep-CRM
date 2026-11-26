@@ -42,6 +42,7 @@ import {
   ListFilter
 } from 'lucide-react';
 import apiClient from '../api/client';
+import { useAcademicYear } from '../context/AcademicYearContext';
 import { CohortPromotionWizard } from '../components/CohortPromotionWizard';
 
 interface ClassItem {
@@ -121,6 +122,8 @@ interface BatchStudentRosterItem {
   gender: string;
   roll_number?: number | null;
   status: string;
+  promotion_status?: string;
+  enrollment_status?: string;
   enrolled_at: string;
 }
 
@@ -174,6 +177,7 @@ interface BatchItem {
 }
 
 export const AcademicConfig: React.FC = () => {
+  const { selectedAcademicYear, academicYears, setSelectedAcademicYear } = useAcademicYear();
   const [activeTab, setActiveTab] = useState<'COURSES' | 'BATCHES' | 'SUBJECTS' | 'CLASSES' | 'STREAMS' | 'ROLLOVER'>('COURSES');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [streams, setStreams] = useState<StreamItem[]>([]);
@@ -194,7 +198,7 @@ export const AcademicConfig: React.FC = () => {
   const [showEditBatch, setShowEditBatch] = useState<boolean>(false);
   const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<BatchItem | null>(null);
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [showActiveRosterOnly, setShowActiveRosterOnly] = useState<boolean>(true);
   const [editBatchForm, setEditBatchForm] = useState({
     name: '',
     code: '',
@@ -525,14 +529,14 @@ export const AcademicConfig: React.FC = () => {
   const fetchAllAcademics = async () => {
     try {
       setLoading(true);
-      const [clsRes, strRes, subRes, crsRes, bthRes, ctRes, ayRes] = await Promise.all([
+      const bthParams = selectedAcademicYear ? { academic_year_id: selectedAcademicYear.id } : undefined;
+      const [clsRes, strRes, subRes, crsRes, bthRes, ctRes] = await Promise.all([
         apiClient.get<ClassItem[]>('/academics/classes'),
         apiClient.get<StreamItem[]>('/academics/streams'),
         apiClient.get<SubjectItem[]>('/academics/subjects'),
         apiClient.get<CourseItem[]>('/academics/courses'),
-        apiClient.get<BatchItem[]>('/academics/batches'),
-        apiClient.get<CourseTypeItem[]>('/academics/course-types').catch(() => ({ data: [] })),
-        apiClient.get<any[]>('/academics/years').catch(() => ({ data: [] }))
+        apiClient.get<BatchItem[]>('/academics/batches', { params: bthParams }),
+        apiClient.get<CourseTypeItem[]>('/academics/course-types').catch(() => ({ data: [] }))
       ]);
 
       setClasses(clsRes.data);
@@ -541,7 +545,6 @@ export const AcademicConfig: React.FC = () => {
       setCourses(crsRes.data);
       setBatches(bthRes.data);
       setCourseTypes(ctRes.data || []);
-      setAcademicYears(ayRes.data || []);
     } catch (err: any) {
       console.error('Failed to load academic inventory', err);
     } finally {
@@ -551,7 +554,7 @@ export const AcademicConfig: React.FC = () => {
 
   useEffect(() => {
     fetchAllAcademics();
-  }, []);
+  }, [selectedAcademicYear?.id]);
 
   const openCreateSubject = () => {
     setSubjectForm(initialSubjectForm);
@@ -823,7 +826,27 @@ export const AcademicConfig: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5 flex-wrap gap-y-2">
+          {/* Academic Session Filter Switcher */}
+          <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs shadow-xs">
+            <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="text-slate-500 font-medium">Session:</span>
+            <select
+              value={selectedAcademicYear?.id || ''}
+              onChange={(e) => {
+                const found = academicYears.find((y) => y.id === e.target.value);
+                if (found) setSelectedAcademicYear(found);
+              }}
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+            >
+              {academicYears.map((ay) => (
+                <option key={ay.id} value={ay.id}>
+                  {ay.name} {ay.is_current ? '(Active Current)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             onClick={fetchAllAcademics}
             className="flex items-center space-x-2 px-3.5 py-2 text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer"
@@ -2467,9 +2490,26 @@ export const AcademicConfig: React.FC = () => {
                     Division {selectedBatchForRoster.division || 'A'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Classroom Roster & Roll Number Directory ({batchRoster.length} students enrolled)
-                </p>
+                {(() => {
+                  const activeCount = batchRoster.filter(s => s.status === 'ACTIVE' && s.promotion_status !== 'PROMOTED_TO_NEXT').length;
+                  const promotedCount = batchRoster.filter(s => s.promotion_status === 'PROMOTED_TO_NEXT' || s.status === 'COMPLETED').length;
+                  return (
+                    <div className="flex items-center space-x-2.5 mt-0.5 flex-wrap">
+                      <p className="text-xs text-slate-500">
+                        Classroom Roster ({activeCount} active students{promotedCount > 0 ? `, ${promotedCount} promoted to next class` : ''})
+                      </p>
+                      {promotedCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowActiveRosterOnly(!showActiveRosterOnly)}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition cursor-pointer"
+                        >
+                          {showActiveRosterOnly ? `Show All (${promotedCount} Promoted)` : 'Show Active Only'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setSelectedBatchForRoster(null)}
@@ -2568,51 +2608,85 @@ export const AcademicConfig: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {batchRoster.map((s) => {
-                      const otherDivisions = batches.filter(
-                        (b) => b.course_id === selectedBatchForRoster.course_id && b.id !== selectedBatchForRoster.id && b.is_active
-                      );
-                      return (
-                        <tr key={s.student_id} className="hover:bg-slate-50/70 transition">
-                          <td className="py-2.5 px-4">
-                            {editingRollStudentId === s.student_id ? (
-                              <div className="flex items-center space-x-1">
-                                <input
-                                  type="number"
-                                  autoFocus
-                                  value={customRollInput}
-                                  onChange={(e) => setCustomRollInput(e.target.value)}
-                                  className="w-16 p-1 text-xs border border-blue-400 rounded bg-white text-slate-900 font-bold font-mono focus:outline-none"
-                                />
-                                <button
-                                  onClick={() => handleSaveCustomRoll(s.student_id)}
-                                  className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => setEditingRollStudentId(null)}
-                                  className="px-1 py-0.5 text-slate-400 hover:text-slate-600 text-[10px]"
-                                >
-                                  ✕
-                                </button>
+                    {(() => {
+                      const displayedList = showActiveRosterOnly
+                        ? batchRoster.filter(s => s.status === 'ACTIVE' && s.promotion_status !== 'PROMOTED_TO_NEXT')
+                        : batchRoster;
+
+                      if (displayedList.length === 0 && batchRoster.length > 0) {
+                        return (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-xs text-slate-500">
+                              All {batchRoster.length} students have completed or promoted to the next class.
+                              <button
+                                type="button"
+                                onClick={() => setShowActiveRosterOnly(false)}
+                                className="ml-2 font-bold text-blue-600 hover:underline cursor-pointer"
+                              >
+                                View all {batchRoster.length} historical students
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return displayedList.map((s) => {
+                        const otherDivisions = batches.filter(
+                          (b) => b.course_id === selectedBatchForRoster.course_id && b.id !== selectedBatchForRoster.id && b.is_active
+                        );
+                        return (
+                          <tr key={s.student_id} className={`hover:bg-slate-50/70 transition ${s.status === 'COMPLETED' || s.promotion_status === 'PROMOTED_TO_NEXT' ? 'opacity-75 bg-slate-50/40' : ''}`}>
+                            <td className="py-2.5 px-4">
+                              {editingRollStudentId === s.student_id ? (
+                                <div className="flex items-center space-x-1">
+                                  <input
+                                    type="number"
+                                    autoFocus
+                                    value={customRollInput}
+                                    onChange={(e) => setCustomRollInput(e.target.value)}
+                                    className="w-16 p-1 text-xs border border-blue-400 rounded bg-white text-slate-900 font-bold font-mono focus:outline-none"
+                                  />
+                                  <button
+                                    onClick={() => handleSaveCustomRoll(s.student_id)}
+                                    className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingRollStudentId(null)}
+                                    className="px-1 py-0.5 text-slate-400 hover:text-slate-600 text-[10px]"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : s.roll_number ? (
+                                <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                                  #{s.roll_number}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                  Unassigned
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 font-mono font-bold text-purple-700">
+                              {s.prn || (s.student_code ? s.student_code.replace('STU-', 'PRN-') : '—')}
+                            </td>
+                            <td className="py-2.5 px-4 font-medium text-slate-900">
+                              <div className="flex items-center space-x-2">
+                                <span>{s.first_name} {s.last_name}</span>
+                                {s.promotion_status === 'PROMOTED_TO_NEXT' && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                    ✨ Promoted to Next Class
+                                  </span>
+                                )}
+                                {s.status === 'COMPLETED' && s.promotion_status !== 'PROMOTED_TO_NEXT' && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                    Completed
+                                  </span>
+                                )}
                               </div>
-                            ) : s.roll_number ? (
-                              <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
-                                #{s.roll_number}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                Unassigned
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-4 font-mono font-bold text-purple-700">
-                            {s.prn || (s.student_code ? s.student_code.replace('STU-', 'PRN-') : '—')}
-                          </td>
-                          <td className="py-2.5 px-4 font-medium text-slate-900">
-                            {s.first_name} {s.last_name}
-                          </td>
+                            </td>
                           <td className="py-2.5 px-4 text-slate-600">{s.gender}</td>
                           <td className="py-2.5 px-4 text-right">
                             <div className="flex items-center justify-end space-x-1">
@@ -2653,8 +2727,9 @@ export const AcademicConfig: React.FC = () => {
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
+                    })
+                  })()}
+                </tbody>
                 </table>
               )}
             </div>

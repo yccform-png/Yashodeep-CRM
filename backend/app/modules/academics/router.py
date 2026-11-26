@@ -874,7 +874,7 @@ def _serialize_batch(b: Batch) -> BatchResponse:
                     classroom_name=c_name
                 )
             )
-    e_count = len(b.__dict__['students']) if 'students' in b.__dict__ and b.__dict__['students'] is not None else 0
+    e_count = len([s for s in (b.students or []) if getattr(s, 'status', 'ACTIVE') == 'ACTIVE']) if getattr(b, 'students', None) is not None else 0
     return BatchResponse(
         id=b.id,
         course_id=b.course_id,
@@ -1233,7 +1233,9 @@ async def get_batch_roster(
 
     stmt = (
         select(BatchStudent)
-        .options(selectinload(BatchStudent.student))
+        .options(
+            selectinload(BatchStudent.student).selectinload(Student.enrollments)
+        )
         .where(BatchStudent.batch_id == batch_id)
         .order_by(
             BatchStudent.roll_number.asc().nulls_last(),
@@ -1244,6 +1246,7 @@ async def get_batch_roster(
     out = []
     for r in records:
         if r.student:
+            m_enr = next((e for e in (r.student.enrollments or []) if e.academic_year_id == batch.academic_year_id), None)
             out.append(
                 BatchStudentRosterItem(
                     student_id=r.student.id,
@@ -1254,7 +1257,9 @@ async def get_batch_roster(
                     gender=r.student.gender,
                     roll_number=r.roll_number,
                     status=r.status,
-                    enrolled_at=r.enrolled_at
+                    enrolled_at=r.enrolled_at,
+                    promotion_status=m_enr.promotion_status if m_enr else None,
+                    enrollment_status=m_enr.status if m_enr else r.status
                 )
             )
     return out
