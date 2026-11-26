@@ -1374,7 +1374,7 @@ export const Admissions: React.FC = () => {
                             setFormData({ ...formData, first_name: e.target.value });
                             clearFieldError('first_name');
                           }}
-                          placeholder="e.g. Rohan"
+                          placeholder="e.g. Harshvardhan"
                           className={getInputClass('first_name', 'pl-9')}
                         />
                       </div>
@@ -1393,7 +1393,7 @@ export const Admissions: React.FC = () => {
                           type="text"
                           value={formData.middle_name}
                           onChange={(e) => setFormData({ ...formData, middle_name: e.target.value })}
-                          placeholder="e.g. Vikram"
+                          placeholder="e.g. Vijay"
                           className={getInputClass('middle_name', 'pl-9')}
                         />
                       </div>
@@ -1412,7 +1412,7 @@ export const Admissions: React.FC = () => {
                             setFormData({ ...formData, last_name: e.target.value });
                             clearFieldError('last_name');
                           }}
-                          placeholder="e.g. Sharma"
+                          placeholder="e.g. Patil"
                           className={getInputClass('last_name', 'pl-9')}
                         />
                       </div>
