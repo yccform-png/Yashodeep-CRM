@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useAcademicYear } from '../context/AcademicYearContext';
 
 interface ExamTypeOption {
   id: string;
@@ -158,6 +159,7 @@ interface MarksEntryRow {
 
 export const Examinations: React.FC = () => {
   const { hasRole } = useAuth();
+  const { selectedAcademicYear, academicYears: contextYears } = useAcademicYear();
   const canManage = hasRole(['SUPER_ADMIN', 'ADMIN', 'TEACHER']);
 
   const [examinations, setExaminations] = useState<ExaminationItem[]>([]);
@@ -296,7 +298,7 @@ export const Examinations: React.FC = () => {
     }
 
     const resolvedExamTypeId = examTypes.length > 0 ? examTypes[0].id : '';
-    const resolvedAcademicYearId = academicYears.find((y) => y.is_current)?.id || (academicYears[0]?.id || '');
+    const resolvedAcademicYearId = selectedAcademicYear?.id || academicYears.find((y) => y.is_current)?.id || (academicYears[0]?.id || '');
 
     const newCode = generateTestCode(resolvedClassId, resolvedSubjectId);
     const newName = suggestTestName(resolvedClassId, resolvedSubjectId, resolvedExamTypeId);
@@ -322,11 +324,16 @@ export const Examinations: React.FC = () => {
     setShowCreateExam(true);
   };
 
-  const fetchExaminations = async () => {
+  const fetchExaminations = async (targetAyId?: string) => {
     try {
       setLoading(true);
+      const ayIdToUse = targetAyId !== undefined ? targetAyId : selectedAcademicYear?.id;
       const [exRes, tyRes, clsRes, crsRes, subRes, ayRes] = await Promise.all([
-        apiClient.get<ExaminationItem[]>('/examinations'),
+        apiClient.get<ExaminationItem[]>('/examinations', {
+          params: {
+            academic_year_id: ayIdToUse || undefined
+          }
+        }),
         apiClient.get<ExamTypeOption[]>('/examinations/types'),
         apiClient.get<ClassItem[]>('/academics/classes'),
         apiClient.get<CourseItem[]>('/academics/courses'),
@@ -380,7 +387,11 @@ export const Examinations: React.FC = () => {
       setShowDeleteModal(false);
 
       // Re-fetch examinations
-      const exRes = await apiClient.get<ExaminationItem[]>('/examinations');
+      const exRes = await apiClient.get<ExaminationItem[]>('/examinations', {
+        params: {
+          academic_year_id: selectedAcademicYear?.id || undefined
+        }
+      });
       setExaminations(exRes.data);
 
       if (exRes.data.length > 0) {
@@ -412,8 +423,8 @@ export const Examinations: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchExaminations();
-  }, []);
+    fetchExaminations(selectedAcademicYear?.id);
+  }, [selectedAcademicYear?.id]);
 
   const handleSelectExam = (id: string) => {
     setSelectedExamId(id);
@@ -886,7 +897,14 @@ export const Examinations: React.FC = () => {
             <Award className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900">Academic Tests &amp; Performance Assessment</h1>
+            <div className="flex items-center space-x-2.5 flex-wrap">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900">Academic Tests &amp; Performance Assessment</h1>
+              {selectedAcademicYear && (
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                  {selectedAcademicYear.name}
+                </span>
+              )}
+            </div>
             <p className="text-xs sm:text-sm text-slate-500">
               Class &amp; Course-Wise Dynamic Tests • Flexible Custom Marks (20 to 720) • Rapid Single-Column Marks Entry
             </p>
@@ -904,7 +922,7 @@ export const Examinations: React.FC = () => {
             </button>
           )}
           <button
-            onClick={fetchExaminations}
+            onClick={() => fetchExaminations()}
             className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200"
             title="Refresh Tests"
           >
@@ -1078,13 +1096,15 @@ export const Examinations: React.FC = () => {
             {filteredExaminations.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs space-y-2">
                 <FileCheck className="w-8 h-8 mx-auto text-slate-300" />
-                <p>No tests found matching the selected class or course.</p>
+                <p>
+                  No tests found for {selectedAcademicYear ? selectedAcademicYear.name : 'this academic session'}{filterClassId !== 'ALL' || filterCourseId !== 'ALL' ? ' matching filter' : ''}.
+                </p>
                 {canManage && (
                   <button
                     onClick={() => openCreateExamForContext(filterClassId !== 'ALL' ? filterClassId : undefined, filterCourseId !== 'ALL' ? filterCourseId : undefined)}
-                    className="text-xs font-bold text-purple-600 hover:underline"
+                    className="text-xs font-bold text-purple-600 hover:underline cursor-pointer"
                   >
-                    + Create a new test now
+                    + Create a new test for {selectedAcademicYear?.name || 'this session'}
                   </button>
                 )}
               </div>
@@ -1695,6 +1715,22 @@ export const Examinations: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Academic Year Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Academic Year / Session *</label>
+                <select
+                  value={createForm.academic_year_id}
+                  onChange={(e) => setCreateForm({ ...createForm, academic_year_id: e.target.value })}
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white font-medium text-slate-800"
+                >
+                  {(contextYears.length > 0 ? contextYears : academicYears).map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.name} {y.is_current ? '• [CURRENT]' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Class & Course Selection */}
