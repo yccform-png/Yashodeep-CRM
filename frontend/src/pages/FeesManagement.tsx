@@ -212,17 +212,14 @@ export const FeesManagement: React.FC = () => {
       const res = await apiClient.post(url);
       const data = res.data;
 
-      if (data?.whatsapp_url) {
-        window.open(data.whatsapp_url, '_blank');
-      }
+      const parentLabel = data?.parent_name
+        ? `${data.parent_name}${data.parent_phone ? ` (${data.parent_phone})` : ''}`
+        : 'Parent';
+      const instLabel = installmentNumber ? `Installment #${installmentNumber}` : 'scheduled fee';
 
       setFeedback({
         type: 'success',
-        text: data?.whatsapp_url
-          ? `Due reminder dispatched via Email & opened in WhatsApp for ${data.parent_name || 'Parent'} (${data.parent_phone || ''})!`
-          : (installmentNumber
-              ? `Due reminder for Installment #${installmentNumber} dispatched via Email!`
-              : `Fee reminder dispatched via Email!`)
+        text: `Fee due reminder for ${instLabel} dispatched successfully to ${parentLabel}!`
       });
     } catch (err: any) {
       setFeedback({
