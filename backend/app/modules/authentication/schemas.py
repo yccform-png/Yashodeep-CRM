@@ -18,6 +18,7 @@ class TokenResponse(BaseModel):
     user_type: str
     roles: List[str]
     permissions: List[str]
+    student_id: Optional[uuid.UUID] = None
 
 
 class UserResponse(BaseModel):
@@ -30,6 +31,7 @@ class UserResponse(BaseModel):
     is_active: bool
     roles: List[str]
     permissions: List[str]
+    student_id: Optional[uuid.UUID] = None
 
     class Config:
         from_attributes = True

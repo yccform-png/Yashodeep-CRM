@@ -156,9 +156,11 @@ def purge_test_data_sync(cutoff=None):
         print(f"Purged {r_sg.rowcount} test student guardians, {r_g.rowcount} test guardians.")
 
         # 17. Delete Test Users
-        r_users = conn.execute(text("""
+        r_users = conn.execute(text(f"""
             DELETE FROM users 
-            WHERE email NOT IN ('yccform@gmail.com', 'teacher@institute.edu')
+            WHERE email NOT IN ('yccform@gmail.com', 'teacher@institute.edu', 'harshalpatil9949@gmail.com', 'harshvardhanpatil090@gmail.com')
+              AND id NOT IN (SELECT user_id FROM students WHERE id = '{REAL_STUDENT_ID}' AND user_id IS NOT NULL)
+              AND id NOT IN (SELECT user_id FROM guardians WHERE id IN (SELECT guardian_id FROM student_guardians WHERE student_id = '{REAL_STUDENT_ID}') AND user_id IS NOT NULL)
         """))
         print(f"Purged {r_users.rowcount} test users.")
 

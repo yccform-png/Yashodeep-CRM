@@ -9,11 +9,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
+from app.core.security import get_password_hash
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException, ForbiddenException
 from app.core.cache import cache_service, CacheKeys, CacheInvalidator
-from app.models.user import User
+from app.models.user import User, Role, UserRole
 from app.models.institute import Institute
-from app.models.student import Student, Guardian, StudentGuardian
+from app.models.student import Student, Guardian, StudentGuardian, StudentUserAccount, GuardianUserAccount
 from app.models.academic import (
     AcademicYear, Class, Stream, Subject, SubjectGroup, Course, CourseVersion, Batch, BatchStudent
 )
@@ -567,6 +568,90 @@ async def process_full_admission(
             )
             db.add(installment)
 
+    # -------------------------------------------------------------------------
+    # Auto-generate Student and Parent User Accounts
+    # -------------------------------------------------------------------------
+    try:
+        # Default password: Student Date of Birth formatted as DDMMYYYY (e.g. 15082008)
+        if student.date_of_birth:
+            stu_dob_pwd = student.date_of_birth.strftime("%d%m%Y")
+        else:
+            stu_dob_pwd = "@Yashodeep2026"
+
+        # 1. Student User Account
+        stu_email = student.email or f"{student.prn.lower().replace('-', '')}@student.yashodeep.com"
+        existing_stu_user = (await db.execute(select(User).where(User.email == stu_email))).scalars().first()
+        if not existing_stu_user and student.mobile:
+            existing_stu_user = (await db.execute(select(User).where(User.mobile == student.mobile))).scalars().first()
+
+        if not existing_stu_user:
+            stu_role = (await db.execute(select(Role).where(Role.code == "STUDENT"))).scalars().first()
+            new_stu_user = User(
+                institute_id=current_user.institute_id,
+                email=stu_email,
+                mobile=student.mobile,
+                hashed_password=get_password_hash(stu_dob_pwd),
+                first_name=student.first_name,
+                last_name=student.last_name,
+                user_type="STUDENT",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(new_stu_user)
+            await db.flush()
+
+            if stu_role:
+                db.add(UserRole(user_id=new_stu_user.id, role_id=stu_role.id))
+
+            student.user_id = new_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=new_stu_user.id, is_primary=True))
+        else:
+            student.user_id = existing_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=existing_stu_user.id, is_primary=True))
+
+        # 2. Parent User Account (Primary Guardian)
+        primary_g = (await db.execute(
+            select(Guardian)
+            .join(StudentGuardian)
+            .where(StudentGuardian.student_id == student.id)
+            .order_by(StudentGuardian.is_primary.desc())
+        )).scalars().first()
+
+        if primary_g and primary_g.mobile:
+            clean_g_mob = primary_g.mobile.strip().replace(" ", "").replace("-", "")
+            parent_email = primary_g.email or f"parent.{clean_g_mob.replace('+', '')}@parent.yashodeep.com"
+
+            existing_par_user = (await db.execute(select(User).where(User.email == parent_email))).scalars().first()
+            if not existing_par_user:
+                existing_par_user = (await db.execute(select(User).where(User.mobile == primary_g.mobile))).scalars().first()
+
+            if not existing_par_user:
+                par_role = (await db.execute(select(Role).where(Role.code == "PARENT"))).scalars().first()
+                new_par_user = User(
+                    institute_id=current_user.institute_id,
+                    email=parent_email,
+                    mobile=primary_g.mobile,
+                    hashed_password=get_password_hash(stu_dob_pwd),
+                    first_name=primary_g.first_name,
+                    last_name=primary_g.last_name,
+                    user_type="PARENT",
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(new_par_user)
+                await db.flush()
+
+                if par_role:
+                    db.add(UserRole(user_id=new_par_user.id, role_id=par_role.id))
+
+                primary_g.user_id = new_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=new_par_user.id, is_primary=True))
+            else:
+                primary_g.user_id = existing_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=existing_par_user.id, is_primary=True))
+    except Exception as e:
+        print(f"⚠️ Non-fatal notice during student/parent account provisioning: {e}")
+
     await db.commit()
     await cache_service.delete(CacheKeys.dashboard_metrics())
     await cache_service.delete(CacheKeys.student_profile(student.id))
@@ -735,6 +820,90 @@ async def convert_trial_to_confirmed_admission(
                 status="PENDING"
             )
             db.add(installment)
+
+    # -------------------------------------------------------------------------
+    # Auto-generate Student and Parent User Accounts
+    # -------------------------------------------------------------------------
+    try:
+        # Default password: Student Date of Birth formatted as DDMMYYYY (e.g. 15082008)
+        if student.date_of_birth:
+            stu_dob_pwd = student.date_of_birth.strftime("%d%m%Y")
+        else:
+            stu_dob_pwd = "@Yashodeep2026"
+
+        # 1. Student User Account
+        stu_email = student.email or f"{student.prn.lower().replace('-', '')}@student.yashodeep.com"
+        existing_stu_user = (await db.execute(select(User).where(User.email == stu_email))).scalars().first()
+        if not existing_stu_user and student.mobile:
+            existing_stu_user = (await db.execute(select(User).where(User.mobile == student.mobile))).scalars().first()
+
+        if not existing_stu_user:
+            stu_role = (await db.execute(select(Role).where(Role.code == "STUDENT"))).scalars().first()
+            new_stu_user = User(
+                institute_id=current_user.institute_id,
+                email=stu_email,
+                mobile=student.mobile,
+                hashed_password=get_password_hash(stu_dob_pwd),
+                first_name=student.first_name,
+                last_name=student.last_name,
+                user_type="STUDENT",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(new_stu_user)
+            await db.flush()
+
+            if stu_role:
+                db.add(UserRole(user_id=new_stu_user.id, role_id=stu_role.id))
+
+            student.user_id = new_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=new_stu_user.id, is_primary=True))
+        else:
+            student.user_id = existing_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=existing_stu_user.id, is_primary=True))
+
+        # 2. Parent User Account (Primary Guardian)
+        primary_g = (await db.execute(
+            select(Guardian)
+            .join(StudentGuardian)
+            .where(StudentGuardian.student_id == student.id)
+            .order_by(StudentGuardian.is_primary.desc())
+        )).scalars().first()
+
+        if primary_g and primary_g.mobile:
+            clean_g_mob = primary_g.mobile.strip().replace(" ", "").replace("-", "")
+            parent_email = primary_g.email or f"parent.{clean_g_mob.replace('+', '')}@parent.yashodeep.com"
+
+            existing_par_user = (await db.execute(select(User).where(User.email == parent_email))).scalars().first()
+            if not existing_par_user:
+                existing_par_user = (await db.execute(select(User).where(User.mobile == primary_g.mobile))).scalars().first()
+
+            if not existing_par_user:
+                par_role = (await db.execute(select(Role).where(Role.code == "PARENT"))).scalars().first()
+                new_par_user = User(
+                    institute_id=current_user.institute_id,
+                    email=parent_email,
+                    mobile=primary_g.mobile,
+                    hashed_password=get_password_hash(stu_dob_pwd),
+                    first_name=primary_g.first_name,
+                    last_name=primary_g.last_name,
+                    user_type="PARENT",
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(new_par_user)
+                await db.flush()
+
+                if par_role:
+                    db.add(UserRole(user_id=new_par_user.id, role_id=par_role.id))
+
+                primary_g.user_id = new_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=new_par_user.id, is_primary=True))
+            else:
+                primary_g.user_id = existing_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=existing_par_user.id, is_primary=True))
+    except Exception as e:
+        print(f"⚠️ Non-fatal notice during student/parent account provisioning: {e}")
 
     await db.commit()
     await cache_service.delete(CacheKeys.dashboard_metrics())
@@ -1230,6 +1399,90 @@ async def enroll_existing_student_skill_course(
                 status="PENDING"
             )
             db.add(installment)
+
+    # -------------------------------------------------------------------------
+    # Auto-generate Student and Parent User Accounts
+    # -------------------------------------------------------------------------
+    try:
+        # Default password: Student Date of Birth formatted as DDMMYYYY (e.g. 15082008)
+        if student.date_of_birth:
+            stu_dob_pwd = student.date_of_birth.strftime("%d%m%Y")
+        else:
+            stu_dob_pwd = "@Yashodeep2026"
+
+        # 1. Student User Account
+        stu_email = student.email or f"{student.prn.lower().replace('-', '')}@student.yashodeep.com"
+        existing_stu_user = (await db.execute(select(User).where(User.email == stu_email))).scalars().first()
+        if not existing_stu_user and student.mobile:
+            existing_stu_user = (await db.execute(select(User).where(User.mobile == student.mobile))).scalars().first()
+
+        if not existing_stu_user:
+            stu_role = (await db.execute(select(Role).where(Role.code == "STUDENT"))).scalars().first()
+            new_stu_user = User(
+                institute_id=current_user.institute_id,
+                email=stu_email,
+                mobile=student.mobile,
+                hashed_password=get_password_hash(stu_dob_pwd),
+                first_name=student.first_name,
+                last_name=student.last_name,
+                user_type="STUDENT",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(new_stu_user)
+            await db.flush()
+
+            if stu_role:
+                db.add(UserRole(user_id=new_stu_user.id, role_id=stu_role.id))
+
+            student.user_id = new_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=new_stu_user.id, is_primary=True))
+        else:
+            student.user_id = existing_stu_user.id
+            db.add(StudentUserAccount(student_id=student.id, user_id=existing_stu_user.id, is_primary=True))
+
+        # 2. Parent User Account (Primary Guardian)
+        primary_g = (await db.execute(
+            select(Guardian)
+            .join(StudentGuardian)
+            .where(StudentGuardian.student_id == student.id)
+            .order_by(StudentGuardian.is_primary.desc())
+        )).scalars().first()
+
+        if primary_g and primary_g.mobile:
+            clean_g_mob = primary_g.mobile.strip().replace(" ", "").replace("-", "")
+            parent_email = primary_g.email or f"parent.{clean_g_mob.replace('+', '')}@parent.yashodeep.com"
+
+            existing_par_user = (await db.execute(select(User).where(User.email == parent_email))).scalars().first()
+            if not existing_par_user:
+                existing_par_user = (await db.execute(select(User).where(User.mobile == primary_g.mobile))).scalars().first()
+
+            if not existing_par_user:
+                par_role = (await db.execute(select(Role).where(Role.code == "PARENT"))).scalars().first()
+                new_par_user = User(
+                    institute_id=current_user.institute_id,
+                    email=parent_email,
+                    mobile=primary_g.mobile,
+                    hashed_password=get_password_hash(stu_dob_pwd),
+                    first_name=primary_g.first_name,
+                    last_name=primary_g.last_name,
+                    user_type="PARENT",
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(new_par_user)
+                await db.flush()
+
+                if par_role:
+                    db.add(UserRole(user_id=new_par_user.id, role_id=par_role.id))
+
+                primary_g.user_id = new_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=new_par_user.id, is_primary=True))
+            else:
+                primary_g.user_id = existing_par_user.id
+                db.add(GuardianUserAccount(guardian_id=primary_g.id, user_id=existing_par_user.id, is_primary=True))
+    except Exception as e:
+        print(f"⚠️ Non-fatal notice during student/parent account provisioning: {e}")
 
     await db.commit()
     await cache_service.delete(CacheKeys.dashboard_metrics())

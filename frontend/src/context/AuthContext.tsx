@@ -9,6 +9,7 @@ export interface User {
   user_type: string;
   roles: string[];
   permissions: string[];
+  student_id?: string;
 }
 
 interface AuthContextType {

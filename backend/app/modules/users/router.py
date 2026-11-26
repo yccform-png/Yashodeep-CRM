@@ -68,7 +68,7 @@ async def list_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     data: UserCreate,
-    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     # Check existing email
@@ -77,6 +77,13 @@ async def create_user(
     if existing:
         raise ConflictException(f"User with email {data.email} already exists")
 
+    if data.mobile:
+        m_stmt = select(User).where(User.mobile == data.mobile)
+        existing_m = (await db.execute(m_stmt)).scalar_one_or_none()
+        if existing_m:
+            raise ConflictException(f"User with mobile {data.mobile} already exists")
+
+    user_type = data.user_type or "ADMIN"
     new_user = User(
         institute_id=current_user.institute_id,
         email=data.email,
@@ -84,20 +91,20 @@ async def create_user(
         hashed_password=get_password_hash(data.password),
         first_name=data.first_name,
         last_name=data.last_name,
-        user_type=data.user_type,
+        user_type=user_type,
         is_active=True,
         is_verified=True
     )
     db.add(new_user)
     await db.flush()
 
-    if data.role_codes:
-        for code in data.role_codes:
-            role_stmt = select(Role).where(Role.code == code)
-            role = (await db.execute(role_stmt)).scalar_one_or_none()
-            if role:
-                ur = UserRole(user_id=new_user.id, role_id=role.id)
-                db.add(ur)
+    role_codes = data.role_codes or [user_type]
+    for code in role_codes:
+        role_stmt = select(Role).where(Role.code == code)
+        role = (await db.execute(role_stmt)).scalar_one_or_none()
+        if role:
+            ur = UserRole(user_id=new_user.id, role_id=role.id)
+            db.add(ur)
 
     await db.commit()
 
@@ -124,6 +131,61 @@ async def create_user(
         roles=roles_list,
         permissions=sorted(list(perms_set))
     )
+
+
+@router.patch("/{user_id}/status", response_model=UserResponse)
+async def toggle_user_status(
+    user_id: uuid.UUID,
+    is_active: bool = Query(...),
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    if user_id == current_user.id:
+        raise BadRequestException("Cannot deactivate your own master account")
+    user = await db.get(User, user_id)
+    if not user:
+        raise NotFoundException(f"User {user_id} not found")
+
+    user.is_active = is_active
+    await db.commit()
+
+    stmt = (
+        select(User)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .where(User.id == user.id)
+    )
+    u = (await db.execute(stmt)).scalar_one()
+    roles_list = [r.code for r in u.roles]
+    if u.user_type not in roles_list:
+        roles_list.append(u.user_type)
+    perms_set = {p.code for r in u.roles for p in r.permissions}
+
+    return UserResponse(
+        id=u.id,
+        email=u.email,
+        mobile=u.mobile,
+        first_name=u.first_name,
+        last_name=u.last_name,
+        user_type=u.user_type,
+        is_active=u.is_active,
+        roles=roles_list,
+        permissions=sorted(list(perms_set))
+    )
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    if user_id == current_user.id:
+        raise BadRequestException("Cannot delete your own master account")
+    user = await db.get(User, user_id)
+    if not user:
+        raise NotFoundException(f"User {user_id} not found")
+    await db.delete(user)
+    await db.commit()
 
 
 @router.get("/roles", response_model=List[RoleResponse])
