@@ -146,7 +146,7 @@ export const Login: React.FC = () => {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. PRN-2026-00001 or 901 or 9420010019"
+                  placeholder="e.g. 202601040216 or 901 or 9420010019"
                   className="w-full pl-9 pr-4 py-2.5 text-xs bg-slate-800/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition"
                 />
               </div>

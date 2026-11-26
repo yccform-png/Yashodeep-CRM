@@ -155,8 +155,12 @@ async def create_student(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
-    # Generate collision-free sequential student code and PRN
-    generated_code, generated_prn = await generate_student_code_and_prn(db, year=2026)
+    # Generate collision-free sequential student code and 12-digit numeric PRN (YYYYDDMMNNNN)
+    generated_code, generated_prn = await generate_student_code_and_prn(
+        db,
+        year=data.admission_date.year if data.admission_date else 2026,
+        admission_date=data.admission_date or date.today()
+    )
     student_code = generated_code
     prn_number = data.prn or generated_prn
 

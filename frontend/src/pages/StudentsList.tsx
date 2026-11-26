@@ -218,7 +218,7 @@ export const StudentsList: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search instantly by name, PRN (e.g. PRN-2026-00350), or phone number..."
+            placeholder="Search instantly by name, PRN (e.g. 202601040216), or phone number..."
             className="w-full pl-10 pr-9 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
           />
           {search && (

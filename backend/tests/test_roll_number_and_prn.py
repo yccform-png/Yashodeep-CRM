@@ -79,7 +79,7 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
         stu_a_data = stu_a_resp.json()
         created_student_ids.append(stu_a_data["id"])
         assert stu_a_data["prn"] is not None
-        assert stu_a_data["prn"].startswith("PRN-")
+        assert len(stu_a_data["prn"]) == 12 and stu_a_data["prn"].isdigit()
 
         stu_b_resp = await client.post(
             "/api/v1/students",
@@ -97,7 +97,7 @@ async def test_prn_and_roll_number_system(client: AsyncClient, auth_headers: dic
         stu_b_data = stu_b_resp.json()
         created_student_ids.append(stu_b_data["id"])
         assert stu_b_data["prn"] is not None
-        assert stu_b_data["prn"].startswith("PRN-")
+        assert len(stu_b_data["prn"]) == 12 and stu_b_data["prn"].isdigit()
         assert stu_a_data["prn"] != stu_b_data["prn"]
 
         # 4. Create Batches for 10th Standard: Division A and Division B

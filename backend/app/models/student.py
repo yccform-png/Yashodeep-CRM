@@ -14,7 +14,7 @@ class Student(Base, UUIDMixin, TimestampMixin):
     institute_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("institutes.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), unique=True, nullable=True)
     student_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)  # e.g., "STU-2026-00001"
-    prn: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True, index=True)  # Permanent Registration Number e.g., "PRN-2026-00001"
+    prn: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True, index=True)  # Permanent Registration Number e.g., "202601040216" (YYYYDDMMNNNN)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     middle_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)

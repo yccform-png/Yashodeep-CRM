@@ -63,8 +63,12 @@ async def process_full_admission(
     trial_days = institute.trial_period_days if institute else 14
     trial_end_date = joining_date + timedelta(days=trial_days) if is_trial_admission else None
 
-    # 1. Create Student
-    student_code, prn_number = await generate_student_code_and_prn(db, year=2026)
+    # 1. Create Student with 12-digit numeric PRN (YYYYDDMMNNNN)
+    student_code, prn_number = await generate_student_code_and_prn(
+        db,
+        year=joining_date.year,
+        admission_date=joining_date
+    )
 
     student = Student(
         institute_id=current_user.institute_id,
