@@ -212,6 +212,38 @@ async def test_dynamic_tests_creation_and_flexible_marks(
     assert float(result["total_possible"]) == 720.0
     assert result["is_pass"] is True
 
+    # 7. Update marks to 690.0 (editing marks on an already published/calculated exam)
+    update_marks_payload = {
+        "exam_subject_id": paper_id,
+        "marks": [
+            {
+                "student_id": exam_base_data["student_id"],
+                "marks_obtained": 690.0,
+                "is_absent": False,
+                "is_withheld": False
+            }
+        ]
+    }
+    upd_resp = await client.post(
+        "/api/v1/examinations/marks",
+        json=update_marks_payload,
+        headers=admin_auth_headers
+    )
+    assert upd_resp.status_code == 200
+
+    # Retrieve exam details again - results, percentage, and merit list must immediately reflect 690.0
+    updated_detail = await client.get(f"/api/v1/examinations/{exam_id}/details", headers=admin_auth_headers)
+    assert updated_detail.status_code == 200
+    updated_data = updated_detail.json()
+    updated_result = next((r for r in updated_data["results"] if r["student_id"] == exam_base_data["student_id"]), None)
+    assert updated_result is not None
+    assert float(updated_result["total_obtained"]) == 690.0
+    expected_pct = round((690.0 / 720.0) * 100, 2)
+    assert float(updated_result["percentage"]) == expected_pct
+    assert updated_result["grade"] == "A+"
+    assert updated_result["rank"] == 1
+
+
 
 @pytest.mark.asyncio
 async def test_examination_deletion_and_cascade_cleanup(client: AsyncClient, admin_auth_headers: dict, exam_base_data: dict):

@@ -246,12 +246,109 @@ async def list_eligible_students_for_paper(
     return output
 
 
+async def recalculate_examination_results(db: AsyncSession, examination_id: uuid.UUID) -> List[uuid.UUID]:
+    """
+    Recalculates composite ExamResult records and rankings for an examination
+    based on the latest ExamMarks across all exam papers.
+    """
+    stmt = (
+        select(ExamSubject)
+        .options(selectinload(ExamSubject.marks))
+        .where(ExamSubject.examination_id == examination_id)
+    )
+    exam_subjects = (await db.execute(stmt)).scalars().all()
+    if not exam_subjects:
+        return []
+
+    # Map student_id -> aggregated statistics
+    student_totals: dict[uuid.UUID, dict] = {}
+    for es in exam_subjects:
+        es_max = es.max_marks or Decimal("0.00")
+        es_pass = es.passing_marks or Decimal("0.00")
+        for m in (es.marks or []):
+            sid = m.student_id
+            if sid not in student_totals:
+                student_totals[sid] = {
+                    "obtained": Decimal("0.00"),
+                    "possible": Decimal("0.00"),
+                    "is_pass": True,
+                    "is_absent": False,
+                }
+            m_obt = m.total_marks_obtained or Decimal("0.00")
+            if not m.is_absent:
+                student_totals[sid]["obtained"] += m_obt
+            else:
+                student_totals[sid]["is_absent"] = True
+            student_totals[sid]["possible"] += es_max
+            if m.is_absent or m_obt < es_pass:
+                student_totals[sid]["is_pass"] = False
+
+    if not student_totals:
+        return []
+
+    # Sort students by total_obtained desc to assign ranks
+    sorted_students = sorted(
+        student_totals.items(),
+        key=lambda item: item[1]["obtained"],
+        reverse=True
+    )
+
+    for rank_idx, (sid, stat) in enumerate(sorted_students, start=1):
+        pct = (
+            (stat["obtained"] / stat["possible"] * Decimal("100.00")).quantize(Decimal("0.01"))
+            if stat["possible"] > 0
+            else Decimal("0.00")
+        )
+        grade = (
+            "A+" if pct >= 90
+            else "A" if pct >= 80
+            else "B+" if pct >= 70
+            else "B" if pct >= 60
+            else "C" if pct >= 50
+            else "D" if pct >= 35
+            else "F"
+        )
+
+        res_stmt = select(ExamResult).where(
+            and_(
+                ExamResult.examination_id == examination_id,
+                ExamResult.student_id == sid
+            )
+        )
+        existing_res = (await db.execute(res_stmt)).scalar_one_or_none()
+        if existing_res:
+            existing_res.total_obtained = stat["obtained"]
+            existing_res.total_possible = stat["possible"]
+            existing_res.percentage = pct
+            existing_res.grade = grade
+            existing_res.is_pass = stat["is_pass"]
+            existing_res.rank = rank_idx
+        else:
+            res = ExamResult(
+                examination_id=examination_id,
+                student_id=sid,
+                total_obtained=stat["obtained"],
+                total_possible=stat["possible"],
+                percentage=pct,
+                grade=grade,
+                rank=rank_idx,
+                is_pass=stat["is_pass"]
+            )
+            db.add(res)
+
+    return list(student_totals.keys())
+
+
 @router.get("/{examination_id}/details")
 async def get_examination_details(
     examination_id: uuid.UUID,
     db: AsyncSession = Depends(get_db)
 ):
     """Returns examination with subject papers, student marks entries, and published result cards."""
+    # Ensure ExamResult records are synchronized with latest marks
+    await recalculate_examination_results(db, examination_id)
+    await db.commit()
+
     stmt = (
         select(Examination)
         .options(
@@ -312,7 +409,12 @@ async def get_examination_details(
     subject_names = [es.subject.name for es in (exam.exam_subjects or []) if es.subject]
     subject_name = ", ".join(subject_names) if subject_names else (exam.name or "Curriculum Evaluation")
 
-    for r in exam.results:
+    sorted_results = sorted(
+        exam.results or [],
+        key=lambda r: (r.rank if r.rank is not None else 999999, -(float(r.total_obtained or 0)))
+    )
+
+    for r in sorted_results:
         stu = r.student
         s_name = f"{stu.first_name} {stu.last_name}".strip() if stu else ""
         s_code = stu.student_code if stu else ""
@@ -533,9 +635,13 @@ async def enter_marks(
             db.add(rec)
         saved_count += 1
 
+    # Immediately recalculate and synchronize composite ExamResult records and rankings
+    affected_students = await recalculate_examination_results(db, exam_subj.examination_id)
     await db.commit()
 
-    # Invalidate cache for students whose marks were entered
+    # Invalidate cache for students whose marks were entered / recalculated
+    for sid in affected_students:
+        await cache_service.delete(CacheKeys.student_profile(sid))
     for m in data.marks:
         await cache_service.delete(CacheKeys.student_profile(m.student_id))
     await cache_service.delete_pattern(CacheKeys.student_pattern())
@@ -556,55 +662,8 @@ async def publish_results(
     if not exam:
         raise NotFoundException("Examination not found")
 
-    # Calculate overall results for all students who sat for this exam
-    stmt = (
-        select(ExamSubject)
-        .options(selectinload(ExamSubject.marks))
-        .where(ExamSubject.examination_id == examination_id)
-    )
-    exam_subjects = (await db.execute(stmt)).scalars().all()
-
-    student_totals = {}  # student_id -> {obtained, possible, is_pass}
-    for es in exam_subjects:
-        for m in es.marks:
-            sid = m.student_id
-            if sid not in student_totals:
-                student_totals[sid] = {"obtained": Decimal("0.00"), "possible": Decimal("0.00"), "pass": True}
-            student_totals[sid]["obtained"] += m.total_marks_obtained
-            student_totals[sid]["possible"] += es.max_marks
-            if m.total_marks_obtained < es.passing_marks:
-                student_totals[sid]["pass"] = False
-
-    # Save results
-    for sid, stat in student_totals.items():
-        pct = (stat["obtained"] / stat["possible"] * 100).quantize(Decimal("0.01")) if stat["possible"] > 0 else Decimal("0.00")
-        grade = "A+" if pct >= 90 else ("A" if pct >= 80 else ("B+" if pct >= 70 else ("B" if pct >= 60 else ("C" if pct >= 50 else ("D" if pct >= 35 else "F")))))
-
-        # Update or create ExamResult
-        res_stmt = select(ExamResult).where(
-            and_(
-                ExamResult.examination_id == examination_id,
-                ExamResult.student_id == sid
-            )
-        )
-        existing_res = (await db.execute(res_stmt)).scalar_one_or_none()
-        if existing_res:
-            existing_res.total_obtained = stat["obtained"]
-            existing_res.total_possible = stat["possible"]
-            existing_res.percentage = pct
-            existing_res.grade = grade
-            existing_res.is_pass = stat["pass"]
-        else:
-            res = ExamResult(
-                examination_id=examination_id,
-                student_id=sid,
-                total_obtained=stat["obtained"],
-                total_possible=stat["possible"],
-                percentage=pct,
-                grade=grade,
-                is_pass=stat["pass"]
-            )
-            db.add(res)
+    # Calculate overall results and rankings for all students who sat for this exam
+    affected_students = await recalculate_examination_results(db, examination_id)
 
     exam.is_published = True
     exam.published_at = datetime.now(timezone.utc)
@@ -617,7 +676,7 @@ async def publish_results(
     )
 
     # Invalidate student profiles and examination caches
-    for sid in student_totals.keys():
+    for sid in affected_students:
         await cache_service.delete(CacheKeys.student_profile(sid))
     await cache_service.delete_pattern(CacheKeys.student_pattern())
     await cache_service.delete(CacheKeys.dashboard_metrics())
