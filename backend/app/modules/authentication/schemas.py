@@ -1,4 +1,5 @@
 import uuid
+from enum import Enum
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 
@@ -40,3 +41,20 @@ class UserResponse(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class ForgotPasswordChannel(str, Enum):
+    WHATSAPP = "WHATSAPP"
+    EMAIL = "EMAIL"
+
+
+class ForgotPasswordRequestOtp(BaseModel):
+    identifier: str  # Email or Mobile
+    channel: ForgotPasswordChannel = ForgotPasswordChannel.WHATSAPP
+
+
+class ForgotPasswordVerifyAndReset(BaseModel):
+    identifier: str
+    otp: str
+    new_password: str
+

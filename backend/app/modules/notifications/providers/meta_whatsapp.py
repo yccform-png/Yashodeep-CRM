@@ -132,5 +132,68 @@ class MetaWhatsAppClient:
                 logger.error(f"Network error connecting to Meta WhatsApp API: {exc}")
                 raise RuntimeError(f"Network connection error to Meta Cloud API: {exc}")
 
+    async def send_text_message(
+        self,
+        to_phone: str,
+        text_body: str
+    ) -> Dict[str, Any]:
+        """
+        Sends a standard text message via Meta WhatsApp Cloud API.
+        Falls back to Mock Sandbox mode when credentials are not configured.
+        """
+        normalized_to = normalize_phone_number(to_phone)
+        if not normalized_to:
+            raise ValueError(f"Invalid phone number provided: '{to_phone}'")
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": normalized_to,
+            "type": "text",
+            "text": {"body": text_body}
+        }
+
+        # Sandbox / Mock Mode
+        if not self.enabled:
+            mock_wamid = f"wamid_mock_{uuid.uuid4().hex[:16]}"
+            logger.info(
+                f"\n[META WHATSAPP MOCK SANDBOX TEXT DISPATCH]\n"
+                f"  To: +{normalized_to} (Raw: {to_phone})\n"
+                f"  Body: {text_body}\n"
+                f"  Generated Mock ID: {mock_wamid}\n"
+            )
+            return {
+                "status": "MOCK_SENT",
+                "message_id": mock_wamid,
+                "recipient": normalized_to,
+                "body": text_body,
+                "is_mock": True
+            }
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.post(self.base_url, headers=headers, json=payload)
+                resp_json = response.json()
+                if response.status_code >= 400:
+                    error_detail = resp_json.get("error", {}).get("message", response.text)
+                    logger.error(f"Meta WhatsApp API error ({response.status_code}): {error_detail}")
+                    raise RuntimeError(f"Meta WhatsApp API returned HTTP {response.status_code}: {error_detail}")
+
+                message_id = resp_json.get("messages", [{}])[0].get("id", "wamid_unknown")
+                return {
+                    "status": "SENT",
+                    "message_id": message_id,
+                    "recipient": normalized_to,
+                    "is_mock": False
+                }
+            except httpx.RequestError as exc:
+                logger.error(f"Network error connecting to Meta WhatsApp API: {exc}")
+                raise RuntimeError(f"Network connection error to Meta Cloud API: {exc}")
+
 
 meta_whatsapp_client = MetaWhatsAppClient()

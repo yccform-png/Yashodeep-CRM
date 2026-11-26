@@ -16,9 +16,14 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     mobile: Optional[str] = None
     is_active: Optional[bool] = None
     role_codes: Optional[List[str]] = None
+
+
+class ResetAdminPasswordRequest(BaseModel):
+    new_password: str
 
 
 class RoleResponse(BaseModel):

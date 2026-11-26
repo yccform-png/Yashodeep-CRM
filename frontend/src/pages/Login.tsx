@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, Mail, ArrowRight, Clock, ShieldCheck, GraduationCap, UserCheck, HelpCircle } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { SuperAdminForgotPasswordModal } from '../components/SuperAdminForgotPasswordModal';
 
 export const Login: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'STAFF' | 'STUDENT_PARENT'>('STAFF');
@@ -10,6 +11,7 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isForgotSuperAdminOpen, setIsForgotSuperAdminOpen] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -156,6 +158,15 @@ export const Login: React.FC = () => {
               <label className="block text-xs font-medium text-slate-300">
                 {activeTab === 'STAFF' ? 'Account Password' : 'Password or Date of Birth (DDMMYYYY)'}
               </label>
+              {activeTab === 'STAFF' && (
+                <button
+                  type="button"
+                  onClick={() => setIsForgotSuperAdminOpen(true)}
+                  className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold cursor-pointer transition"
+                >
+                  Forgot password?
+                </button>
+              )}
               {activeTab === 'STUDENT_PARENT' && (
                 <span className="text-[10px] text-blue-400 font-medium flex items-center space-x-1">
                   <HelpCircle className="w-3 h-3" />
@@ -213,6 +224,14 @@ export const Login: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Super Admin Forgot Password (WhatsApp / Email OTP) Modal */}
+      {isForgotSuperAdminOpen && (
+        <SuperAdminForgotPasswordModal
+          isOpen={isForgotSuperAdminOpen}
+          onClose={() => setIsForgotSuperAdminOpen(false)}
+        />
+      )}
     </div>
   );
 };

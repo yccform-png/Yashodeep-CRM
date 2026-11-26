@@ -33,11 +33,15 @@ import {
   Search,
   Copy,
   Eye,
-  EyeOff
+  EyeOff,
+  Edit3,
+  KeyRound
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import { EditStaffModal } from '../components/EditStaffModal';
+import { ResetStaffPasswordModal } from '../components/ResetStaffPasswordModal';
 
 interface AdminUser {
   id: string;
@@ -114,6 +118,10 @@ export const InstituteSettings: React.FC = () => {
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedStaffForEdit, setSelectedStaffForEdit] = useState<AdminUser | null>(null);
+  const [isEditStaffOpen, setIsEditStaffOpen] = useState(false);
+  const [selectedStaffForReset, setSelectedStaffForReset] = useState<AdminUser | null>(null);
+  const [isResetStaffPasswordOpen, setIsResetStaffPasswordOpen] = useState(false);
 
   // Keep form updated when institute data loads
   useEffect(() => {
@@ -1254,6 +1262,34 @@ export const InstituteSettings: React.FC = () => {
                                 )}
                               </button>
 
+                              {/* Edit Staff Profile (Super Admin or Self) */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStaffForEdit(admin);
+                                  setIsEditStaffOpen(true);
+                                }}
+                                className="p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                title={isMasterSuperAdmin ? 'Edit Super Admin Profile (Self)' : 'Edit Staff Admin Profile'}
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+
+                              {/* Reset Admin Password (Only for Operational Admins) */}
+                              {!isMasterSuperAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedStaffForReset(admin);
+                                    setIsResetStaffPasswordOpen(true);
+                                  }}
+                                  className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                                  title="Reset Staff Admin Password"
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </button>
+                              )}
+
                               {/* Toggle Active Status */}
                               {!isMasterSuperAdmin && !isCurrentUser && (
                                 <button
@@ -1481,6 +1517,43 @@ export const InstituteSettings: React.FC = () => {
                 </form>
               </div>
             </div>
+          )}
+
+          {/* Edit Staff Modal */}
+          {isEditStaffOpen && selectedStaffForEdit && (
+            <EditStaffModal
+              isOpen={isEditStaffOpen}
+              staff={selectedStaffForEdit}
+              onClose={() => {
+                setIsEditStaffOpen(false);
+                setSelectedStaffForEdit(null);
+              }}
+              onSuccess={(updatedUser) => {
+                setAdmins((prev) => prev.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u)));
+                setAdminFeedback({
+                  type: 'success',
+                  text: `Successfully updated profile for ${updatedUser.first_name} ${updatedUser.last_name}`
+                });
+              }}
+            />
+          )}
+
+          {/* Reset Staff Password Modal */}
+          {isResetStaffPasswordOpen && selectedStaffForReset && (
+            <ResetStaffPasswordModal
+              isOpen={isResetStaffPasswordOpen}
+              staff={selectedStaffForReset}
+              onClose={() => {
+                setIsResetStaffPasswordOpen(false);
+                setSelectedStaffForReset(null);
+              }}
+              onSuccess={() => {
+                setAdminFeedback({
+                  type: 'success',
+                  text: `Password reset successfully for ${selectedStaffForReset.first_name}`
+                });
+              }}
+            />
           )}
         </div>
       )}
