@@ -1,10 +1,12 @@
 import uuid
+import logging
 from typing import List, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, delete
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
@@ -32,6 +34,7 @@ from app.modules.students.schemas import (
 from app.modules.students.service import generate_student_code_and_prn
 
 router = APIRouter(prefix="/students", tags=["Students"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=List[StudentListResponse])
@@ -813,6 +816,7 @@ async def update_student(
             setattr(student, field, val)
 
     # Process Parent / Guardian updates if provided
+    primary_g: Optional[Guardian] = None
     has_guardian_data = any(v is not None for v in [g_first, g_last, g_rel, g_mob, g_email, g_occ])
     if has_guardian_data:
         sg_stmt = (
@@ -837,23 +841,10 @@ async def update_student(
                 primary_g.email = g_email.strip() if g_email else None
             if g_occ is not None:
                 primary_g.occupation = g_occ.strip() if g_occ else None
-
-            # Sync linked parent user account if provisioned
-            if primary_g.user_id:
-                g_user = await db.get(User, primary_g.user_id)
-                if g_user:
-                    if g_first is not None and g_first.strip():
-                        g_user.first_name = g_first.strip()
-                    if g_last is not None and g_last.strip():
-                        g_user.last_name = g_last.strip()
-                    if g_mob is not None and g_mob.strip():
-                        g_user.mobile = g_mob.strip()
-                    if g_email is not None:
-                        g_user.email = g_email.strip() if g_email else None
         else:
             # Student currently has no guardian record; create primary guardian
             if (g_first or g_name) and g_mob:
-                new_g = Guardian(
+                primary_g = Guardian(
                     institute_id=student.institute_id,
                     first_name=(g_first or "Parent").strip(),
                     last_name=(g_last or student.last_name).strip(),
@@ -862,19 +853,132 @@ async def update_student(
                     email=g_email.strip() if g_email else None,
                     occupation=g_occ.strip() if g_occ else None
                 )
-                db.add(new_g)
+                db.add(primary_g)
                 await db.flush()
 
                 new_sg = StudentGuardian(
                     student_id=student.id,
-                    guardian_id=new_g.id,
+                    guardian_id=primary_g.id,
                     is_primary=True,
                     can_pickup=True,
                     receives_notifications=True
                 )
                 db.add(new_sg)
+    else:
+        # Fetch existing primary guardian for user account sync if present
+        sg_stmt = (
+            select(StudentGuardian)
+            .options(selectinload(StudentGuardian.guardian))
+            .where(StudentGuardian.student_id == student_id)
+            .order_by(StudentGuardian.is_primary.desc())
+        )
+        sgs = (await db.execute(sg_stmt)).scalars().all()
+        if sgs and sgs[0].guardian:
+            primary_g = sgs[0].guardian
 
-    await db.commit()
+    # -------------------------------------------------------------
+    # Safely synchronize User credentials (Student & Parent)
+    # Prevent UniqueViolationError on users.mobile and users.email
+    # -------------------------------------------------------------
+    stu_user = await db.get(User, student.user_id) if student.user_id else None
+    if not stu_user:
+        sua = (await db.execute(
+            select(StudentUserAccount).where(StudentUserAccount.student_id == student.id, StudentUserAccount.is_primary == True)
+        )).scalars().first()
+        if sua:
+            stu_user = await db.get(User, sua.user_id)
+            if not student.user_id:
+                student.user_id = sua.user_id
+
+    g_user = await db.get(User, primary_g.user_id) if (primary_g and primary_g.user_id) else None
+    if not g_user and primary_g:
+        gua = (await db.execute(
+            select(GuardianUserAccount).where(GuardianUserAccount.guardian_id == primary_g.id, GuardianUserAccount.is_primary == True)
+        )).scalars().first()
+        if gua:
+            g_user = await db.get(User, gua.user_id)
+            if not primary_g.user_id:
+                primary_g.user_id = gua.user_id
+
+    # 1. Sync user names
+    if stu_user:
+        stu_user.first_name = student.first_name
+        stu_user.last_name = student.last_name
+    if g_user and primary_g:
+        g_user.first_name = primary_g.first_name
+        g_user.last_name = primary_g.last_name
+
+    # 2. Sync user emails without collisions
+    if stu_user and student.email:
+        s_email_clean = student.email.strip()
+        email_conflict = (await db.execute(
+            select(User).where(User.email.ilike(s_email_clean), User.id != stu_user.id)
+        )).scalars().first()
+        if not email_conflict:
+            stu_user.email = s_email_clean
+
+    if g_user and primary_g and primary_g.email:
+        g_email_clean = primary_g.email.strip()
+        email_conflict = (await db.execute(
+            select(User).where(User.email.ilike(g_email_clean), User.id != g_user.id)
+        )).scalars().first()
+        if not email_conflict:
+            g_user.email = g_email_clean
+
+    # 3. Sync user mobile numbers safely:
+    # Handle swapping numbers and duplicate numbers between student & parent
+    target_stu_mob = student.mobile.strip() if student.mobile else None
+    target_g_mob = primary_g.mobile.strip() if (primary_g and primary_g.mobile) else None
+
+    # Step 3a: Temporarily clear mobile on both accounts if changed to avoid immediate unique collision
+    needs_flush = False
+    if stu_user and target_stu_mob and stu_user.mobile != target_stu_mob:
+        stu_user.mobile = None
+        needs_flush = True
+    if g_user and target_g_mob and g_user.mobile != target_g_mob:
+        g_user.mobile = None
+        needs_flush = True
+    if needs_flush:
+        await db.flush()
+
+    # Step 3b: Assign parent user mobile (guarding uniqueness across all users)
+    if g_user and target_g_mob:
+        user_with_g_mob = (await db.execute(
+            select(User).where(User.mobile == target_g_mob, User.id != g_user.id)
+        )).scalars().first()
+        if not user_with_g_mob:
+            g_user.mobile = target_g_mob
+        else:
+            logger.warning(
+                "Mobile %s already registered to user %s; skipping User.mobile update for guardian %s",
+                target_g_mob, user_with_g_mob.id, g_user.id
+            )
+
+    # Step 3c: Assign student user mobile
+    if stu_user and target_stu_mob:
+        if g_user and target_stu_mob == g_user.mobile:
+            # Student shares same mobile with guardian; leave student User.mobile None so unique constraint holds
+            stu_user.mobile = None
+        else:
+            user_with_s_mob = (await db.execute(
+                select(User).where(User.mobile == target_stu_mob, User.id != stu_user.id)
+            )).scalars().first()
+            if not user_with_s_mob:
+                stu_user.mobile = target_stu_mob
+            else:
+                logger.warning(
+                    "Mobile %s already registered to user %s; skipping User.mobile update for student %s",
+                    target_stu_mob, user_with_s_mob.id, stu_user.id
+                )
+
+    try:
+        await db.commit()
+    except IntegrityError as ie:
+        await db.rollback()
+        logger.error("Database integrity error during student update: %s", ie)
+        raise BadRequestException(
+            "Could not update student record due to a unique data conflict. Please verify mobile numbers and emails are valid."
+        )
 
     # Re-fetch student with all relations for full response
     refetch_stmt = (
