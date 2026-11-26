@@ -40,7 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     navigate('/login');
   };
 
-  const isStudentOrParent = user?.user_type === 'STUDENT' || user?.user_type === 'PARENT';
+  const isParent = user?.user_type === 'PARENT';
+  const isStudentOrParent = user?.user_type === 'STUDENT' || isParent;
   const studentId = user?.student_id;
 
   const staffNavItems = [
@@ -59,13 +60,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
   ];
 
   const studentNavItems = studentId ? [
-    { name: 'My Profile & Dossier', path: `/students/${studentId}`, icon: GraduationCap },
-    { name: 'My Attendance', path: `/students/${studentId}?tab=attendance`, icon: CalendarCheck },
-    { name: 'My Exam Scorecards', path: `/students/${studentId}?tab=examinations`, icon: Award },
+    { name: isParent ? 'Ward Profile & Dossier' : 'My Profile & Dossier', path: `/students/${studentId}`, icon: GraduationCap },
+    { name: isParent ? 'Ward Attendance' : 'My Attendance', path: `/students/${studentId}?tab=attendance`, icon: CalendarCheck },
+    { name: isParent ? 'Ward Exam Scorecards' : 'My Exam Scorecards', path: `/students/${studentId}?tab=examinations`, icon: Award },
     { name: 'Hostel & Study Hall', path: `/students/${studentId}?tab=hostel`, icon: Home },
     { name: 'Official Fee Receipts', path: `/students/${studentId}?tab=payments`, icon: CreditCard },
   ] : [
-    { name: 'My Student Portal', path: '/portals', icon: Layers }
+    { name: isParent ? 'Parent Monitoring Portal' : 'Student Portal', path: '/portals', icon: Layers }
   ];
 
   const filteredItems = isStudentOrParent
