@@ -51,29 +51,30 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
 
   useEffect(() => {
     if (student && isOpen) {
-      let gFirst = '';
-      let gLast = '';
-      let gRel = 'FATHER';
-      let gMob = '';
-      let gEmail = '';
-      let gOcc = '';
+      let gFirst = student.guardian_first_name || '';
+      let gLast = student.guardian_last_name || '';
+      let gRel = (student.guardian_relation || 'FATHER').toUpperCase();
+      let gMob = student.guardian_mobile || '';
+      let gEmail = student.guardian_email || '';
+      let gOcc = student.guardian_occupation || '';
 
       if (student.guardians && student.guardians.length > 0) {
         const primaryG = student.guardians.find((g: any) => g.is_primary) || student.guardians[0];
-        gFirst = primaryG.first_name || '';
-        gLast = primaryG.last_name || '';
-        gRel = primaryG.relation ? primaryG.relation.toUpperCase() : 'FATHER';
-        gMob = primaryG.mobile || '';
-        gEmail = primaryG.email || '';
-        gOcc = primaryG.occupation || '';
-      } else if (student.guardian_name) {
+        if (primaryG.first_name) gFirst = primaryG.first_name;
+        if (primaryG.last_name) gLast = primaryG.last_name;
+        if (!gFirst && primaryG.name) {
+          const parts = primaryG.name.trim().split(/\s+/);
+          gFirst = parts[0] || '';
+          gLast = parts.slice(1).join(' ') || '';
+        }
+        if (primaryG.relation) gRel = primaryG.relation.toUpperCase();
+        if (primaryG.mobile) gMob = primaryG.mobile;
+        if (primaryG.email) gEmail = primaryG.email;
+        if (primaryG.occupation) gOcc = primaryG.occupation;
+      } else if (student.guardian_name && (!gFirst || !gLast)) {
         const parts = student.guardian_name.trim().split(/\s+/);
-        gFirst = parts[0] || '';
-        gLast = parts.slice(1).join(' ') || '';
-        gRel = student.guardian_relation ? student.guardian_relation.toUpperCase() : 'FATHER';
-        gMob = student.guardian_mobile || '';
-        gEmail = student.guardian_email || '';
-        gOcc = student.guardian_occupation || '';
+        if (!gFirst) gFirst = parts[0] || '';
+        if (!gLast) gLast = parts.slice(1).join(' ') || '';
       }
 
       setFormData({
@@ -108,24 +109,28 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
       setError('');
 
       // Fetch live guardian records directly from server to ensure fresh data
-      if (student.id) {
-        api.get(`/students/${student.id}/guardians`)
+      const sId = student.id || student._id;
+      if (sId) {
+        api.get(`/students/${sId}/guardians`)
           .then((res) => {
             if (res.data && res.data.length > 0) {
               const primaryG = res.data.find((g: any) => g.is_primary) || res.data[0];
+              const parts = (primaryG.name || '').trim().split(/\s+/);
+              const fetchedFirst = primaryG.first_name || parts[0] || '';
+              const fetchedLast = primaryG.last_name || parts.slice(1).join(' ') || '';
               setFormData((prev) => ({
                 ...prev,
-                guardian_first_name: primaryG.first_name || '',
-                guardian_last_name: primaryG.last_name || '',
-                guardian_relation: primaryG.relation ? primaryG.relation.toUpperCase() : 'FATHER',
-                guardian_mobile: primaryG.mobile || '',
-                guardian_email: primaryG.email || '',
-                guardian_occupation: primaryG.occupation || ''
+                guardian_first_name: fetchedFirst || prev.guardian_first_name,
+                guardian_last_name: fetchedLast || prev.guardian_last_name,
+                guardian_relation: (primaryG.relation || prev.guardian_relation || 'FATHER').toUpperCase(),
+                guardian_mobile: primaryG.mobile || prev.guardian_mobile,
+                guardian_email: primaryG.email || prev.guardian_email,
+                guardian_occupation: primaryG.occupation || prev.guardian_occupation
               }));
             }
           })
-          .catch(() => {
-            // fallback gracefully
+          .catch((err) => {
+            console.error('Failed to fetch live student guardians:', err);
           });
       }
     }

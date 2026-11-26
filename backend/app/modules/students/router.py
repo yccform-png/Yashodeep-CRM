@@ -276,14 +276,20 @@ async def get_student_profile(
     # 1. Overview Tab
     guardians_stmt = select(StudentGuardian).options(selectinload(StudentGuardian.guardian)).where(StudentGuardian.student_id == student_id)
     guardians_res = (await db.execute(guardians_stmt)).scalars().all()
+    primary_g = next((sg.guardian for sg in guardians_res if sg.is_primary), (guardians_res[0].guardian if guardians_res else None))
+
     guardians_list = [
         {
             "id": str(sg.guardian.id),
-            "name": f"{sg.guardian.first_name} {sg.guardian.last_name}",
+            "first_name": sg.guardian.first_name,
+            "last_name": sg.guardian.last_name,
+            "name": f"{sg.guardian.first_name} {sg.guardian.last_name}".strip(),
             "relation": sg.guardian.relation,
             "mobile": sg.guardian.mobile,
+            "email": sg.guardian.email,
+            "occupation": sg.guardian.occupation,
             "is_primary": sg.is_primary
-        } for sg in guardians_res
+        } for sg in guardians_res if sg.guardian
     ]
 
     # Query active batch and roll number (prioritizing core standard classroom batch over elective skill courses)
@@ -331,6 +337,13 @@ async def get_student_profile(
         "emergency_contact_name": student.emergency_contact_name,
         "emergency_contact_phone": student.emergency_contact_phone,
         "emergency_contact_relation": student.emergency_contact_relation,
+        "guardian_first_name": primary_g.first_name if primary_g else None,
+        "guardian_last_name": primary_g.last_name if primary_g else None,
+        "guardian_name": f"{primary_g.first_name} {primary_g.last_name}".strip() if primary_g else None,
+        "guardian_relation": primary_g.relation if primary_g else None,
+        "guardian_mobile": primary_g.mobile if primary_g else None,
+        "guardian_email": primary_g.email if primary_g else None,
+        "guardian_occupation": primary_g.occupation if primary_g else None,
         "admission_date": student.admission_date.isoformat(),
         "status": student.status,
         "trial_end_date": student.trial_end_date.isoformat() if student.trial_end_date else None,
