@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Phone, MapPin, ShieldAlert, Loader2, Save, School } from 'lucide-react';
+import { X, User, Phone, MapPin, ShieldAlert, Loader2, Save, School, Users } from 'lucide-react';
 import api from '../api/client';
 
 interface EditStudentModalProps {
@@ -36,7 +36,14 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
     district: 'Kolhapur',
     emergency_contact_name: '',
     emergency_contact_phone: '',
-    emergency_contact_relation: ''
+    emergency_contact_relation: '',
+    // Parent / Guardian details
+    guardian_first_name: '',
+    guardian_last_name: '',
+    guardian_relation: 'FATHER',
+    guardian_mobile: '',
+    guardian_email: '',
+    guardian_occupation: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -44,6 +51,31 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
 
   useEffect(() => {
     if (student && isOpen) {
+      let gFirst = '';
+      let gLast = '';
+      let gRel = 'FATHER';
+      let gMob = '';
+      let gEmail = '';
+      let gOcc = '';
+
+      if (student.guardians && student.guardians.length > 0) {
+        const primaryG = student.guardians.find((g: any) => g.is_primary) || student.guardians[0];
+        gFirst = primaryG.first_name || '';
+        gLast = primaryG.last_name || '';
+        gRel = primaryG.relation ? primaryG.relation.toUpperCase() : 'FATHER';
+        gMob = primaryG.mobile || '';
+        gEmail = primaryG.email || '';
+        gOcc = primaryG.occupation || '';
+      } else if (student.guardian_name) {
+        const parts = student.guardian_name.trim().split(/\s+/);
+        gFirst = parts[0] || '';
+        gLast = parts.slice(1).join(' ') || '';
+        gRel = student.guardian_relation ? student.guardian_relation.toUpperCase() : 'FATHER';
+        gMob = student.guardian_mobile || '';
+        gEmail = student.guardian_email || '';
+        gOcc = student.guardian_occupation || '';
+      }
+
       setFormData({
         first_name: student.first_name || '',
         middle_name: student.middle_name || '',
@@ -65,9 +97,37 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
         district: student.district || 'Kolhapur',
         emergency_contact_name: student.emergency_contact_name || '',
         emergency_contact_phone: student.emergency_contact_phone || '',
-        emergency_contact_relation: student.emergency_contact_relation || ''
+        emergency_contact_relation: student.emergency_contact_relation || '',
+        guardian_first_name: gFirst,
+        guardian_last_name: gLast,
+        guardian_relation: gRel,
+        guardian_mobile: gMob,
+        guardian_email: gEmail,
+        guardian_occupation: gOcc
       });
       setError('');
+
+      // Fetch live guardian records directly from server to ensure fresh data
+      if (student.id) {
+        api.get(`/students/${student.id}/guardians`)
+          .then((res) => {
+            if (res.data && res.data.length > 0) {
+              const primaryG = res.data.find((g: any) => g.is_primary) || res.data[0];
+              setFormData((prev) => ({
+                ...prev,
+                guardian_first_name: primaryG.first_name || '',
+                guardian_last_name: primaryG.last_name || '',
+                guardian_relation: primaryG.relation ? primaryG.relation.toUpperCase() : 'FATHER',
+                guardian_mobile: primaryG.mobile || '',
+                guardian_email: primaryG.email || '',
+                guardian_occupation: primaryG.occupation || ''
+              }));
+            }
+          })
+          .catch(() => {
+            // fallback gracefully
+          });
+      }
     }
   }, [student, isOpen]);
 
@@ -99,6 +159,11 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
 
     if (!formData.mobile.trim() || formData.mobile.replace(/\D/g, '').length < 10) {
       setError('Student mobile number is mandatory (at least 10 digits).');
+      return;
+    }
+
+    if (formData.guardian_mobile.trim() && formData.guardian_mobile.replace(/\D/g, '').length < 10) {
+      setError('Parent / Guardian mobile number must be at least 10 digits.');
       return;
     }
 
@@ -154,7 +219,15 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
         address_line1: `${formData.village.trim()}, Tal. ${formData.taluka.trim()}`,
         emergency_contact_name: formData.emergency_contact_name.trim() || null,
         emergency_contact_phone: formData.emergency_contact_phone.trim() || null,
-        emergency_contact_relation: formData.emergency_contact_relation.trim() || null
+        emergency_contact_relation: formData.emergency_contact_relation.trim() || null,
+        // Parent / Guardian details
+        guardian_first_name: formData.guardian_first_name.trim() || null,
+        guardian_last_name: formData.guardian_last_name.trim() || null,
+        guardian_name: `${formData.guardian_first_name.trim()} ${formData.guardian_last_name.trim()}`.trim() || null,
+        guardian_relation: formData.guardian_relation || 'FATHER',
+        guardian_mobile: formData.guardian_mobile.trim() || null,
+        guardian_email: formData.guardian_email.trim() || null,
+        guardian_occupation: formData.guardian_occupation.trim() || null
       };
 
       const res = await api.patch(`/students/${student.id}`, payload);
@@ -489,6 +562,114 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Section: Parent / Guardian Details */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+              <div className="flex items-center space-x-2">
+                <Users className="w-4 h-4 text-purple-600" />
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Parent / Guardian Details</h4>
+              </div>
+              <span className="text-[10px] font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                Official WhatsApp &amp; SMS
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <span>Guardian First Name</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="guardian_first_name"
+                  value={formData.guardian_first_name}
+                  onChange={handleChange}
+                  placeholder="e.g. Ramesh or Vaishnavi"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <span>Guardian Last Name</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="guardian_last_name"
+                  value={formData.guardian_last_name}
+                  onChange={handleChange}
+                  placeholder="e.g. Patil"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <span>Relationship to Student</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <select
+                  name="guardian_relation"
+                  value={formData.guardian_relation}
+                  onChange={handleChange}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                >
+                  <option value="FATHER">Father</option>
+                  <option value="MOTHER">Mother</option>
+                  <option value="LEGAL_GUARDIAN">Legal Guardian</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <span>Parent Mobile (WhatsApp)</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="guardian_mobile"
+                  value={formData.guardian_mobile}
+                  onChange={handleChange}
+                  placeholder="e.g. 9420010019"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Parent Occupation / Profession
+                </label>
+                <input
+                  type="text"
+                  name="guardian_occupation"
+                  value={formData.guardian_occupation}
+                  onChange={handleChange}
+                  placeholder="e.g. Farmer / Business / Service"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Parent Email Address (Optional)
+              </label>
+              <input
+                type="email"
+                name="guardian_email"
+                value={formData.guardian_email}
+                onChange={handleChange}
+                placeholder="parent@example.com"
+                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+              />
             </div>
           </div>
 

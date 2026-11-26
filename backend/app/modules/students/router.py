@@ -26,7 +26,7 @@ from app.models.attendance import AttendanceRecord, AttendanceSession
 from app.models.examination import ExamMarks, ExamSubject, Examination, ExamResult
 from app.modules.students.schemas import (
     StudentCreate, StudentUpdate, StudentListResponse, StudentProfileResponse,
-    GuardianCreate, GuardianResponse,
+    GuardianCreate, GuardianResponse, GuardianResponseItem,
     ResetPasswordTarget, ResetPasswordToDobRequest, ResetPasswordToDobResponse
 )
 from app.modules.students.service import generate_student_code_and_prn
@@ -91,6 +91,7 @@ async def list_students(
             selectinload(Student.enrollments).selectinload(Enrollment.academic_class),
             selectinload(Student.enrollments).selectinload(Enrollment.course),
             selectinload(Student.enrollments).selectinload(Enrollment.batch),
+            selectinload(Student.guardians).selectinload(StudentGuardian.guardian),
         )
         .offset(skip)
         .limit(limit)
@@ -99,54 +100,78 @@ async def list_students(
     result = await db.execute(stmt)
     students = result.scalars().all()
 
-    out = []
-    for s in students:
-        target_enr = None
-        if academic_year_id:
-            target_enr = next((e for e in (s.enrollments or []) if e.academic_year_id == academic_year_id), None)
-        if not target_enr and s.enrollments:
-            target_enr = next((e for e in s.enrollments if e.status == "ACTIVE"), s.enrollments[0])
+    return [_build_student_list_response(s, academic_year_id) for s in students]
 
-        out.append(
-            StudentListResponse(
-                id=s.id,
-                student_code=s.student_code,
-                prn=s.prn,
-                first_name=s.first_name,
-                middle_name=s.middle_name,
-                last_name=s.last_name,
-                date_of_birth=s.date_of_birth,
-                gender=s.gender,
-                mobile=s.mobile,
-                email=s.email,
-                status=s.status,
-                admission_date=s.admission_date,
-                blood_group=s.blood_group,
-                institution_type=s.institution_type,
-                school_college_name=s.school_college_name,
-                education_board=s.education_board,
-                previous_percentage=float(s.previous_percentage) if s.previous_percentage is not None else None,
-                aadhar_number=s.aadhar_number,
-                category=s.category,
-                village=s.village,
-                taluka=s.taluka,
-                district=s.district,
-                address_line1=s.address_line1,
-                address_line2=s.address_line2,
-                city=s.city,
-                state=s.state,
-                pincode=s.pincode,
-                emergency_contact_name=s.emergency_contact_name,
-                emergency_contact_phone=s.emergency_contact_phone,
-                emergency_contact_relation=s.emergency_contact_relation,
-                enrollment_status=target_enr.status if target_enr else s.status,
-                promotion_status=target_enr.promotion_status if target_enr else None,
-                class_name=target_enr.academic_class.name if target_enr and target_enr.academic_class else None,
-                course_name=target_enr.course.name if target_enr and target_enr.course else None,
-                batch_name=target_enr.batch.name if target_enr and target_enr.batch else None,
-            )
+
+def _build_student_list_response(s: Student, academic_year_id: Optional[uuid.UUID] = None) -> StudentListResponse:
+    target_enr = None
+    if academic_year_id:
+        target_enr = next((e for e in (s.enrollments or []) if e.academic_year_id == academic_year_id), None)
+    if not target_enr and s.enrollments:
+        target_enr = next((e for e in s.enrollments if e.status == "ACTIVE"), s.enrollments[0])
+
+    primary_sg = next((sg for sg in (s.guardians or []) if sg.is_primary), (s.guardians[0] if s.guardians else None))
+    g_obj = primary_sg.guardian if (primary_sg and primary_sg.guardian) else None
+
+    g_list = [
+        GuardianResponseItem(
+            id=sg.guardian.id,
+            first_name=sg.guardian.first_name,
+            last_name=sg.guardian.last_name,
+            relation=sg.guardian.relation,
+            mobile=sg.guardian.mobile,
+            email=sg.guardian.email,
+            occupation=sg.guardian.occupation,
+            address=sg.guardian.address,
+            is_primary=sg.is_primary,
+            receives_notifications=sg.receives_notifications
         )
-    return out
+        for sg in (s.guardians or []) if sg.guardian
+    ]
+
+    return StudentListResponse(
+        id=s.id,
+        student_code=s.student_code,
+        prn=s.prn,
+        first_name=s.first_name,
+        middle_name=s.middle_name,
+        last_name=s.last_name,
+        date_of_birth=s.date_of_birth,
+        gender=s.gender,
+        mobile=s.mobile,
+        email=s.email,
+        status=s.status,
+        admission_date=s.admission_date,
+        blood_group=s.blood_group,
+        institution_type=s.institution_type,
+        school_college_name=s.school_college_name,
+        education_board=s.education_board,
+        previous_percentage=float(s.previous_percentage) if s.previous_percentage is not None else None,
+        aadhar_number=s.aadhar_number,
+        category=s.category,
+        village=s.village,
+        taluka=s.taluka,
+        district=s.district,
+        address_line1=s.address_line1,
+        address_line2=s.address_line2,
+        city=s.city,
+        state=s.state,
+        pincode=s.pincode,
+        emergency_contact_name=s.emergency_contact_name,
+        emergency_contact_phone=s.emergency_contact_phone,
+        emergency_contact_relation=s.emergency_contact_relation,
+        guardian_name=f"{g_obj.first_name} {g_obj.last_name}".strip() if g_obj else None,
+        guardian_relation=g_obj.relation if g_obj else None,
+        guardian_mobile=g_obj.mobile if g_obj else None,
+        guardian_email=g_obj.email if g_obj else None,
+        guardian_occupation=g_obj.occupation if g_obj else None,
+        guardians=g_list,
+        enrollment_status=target_enr.status if target_enr else s.status,
+        promotion_status=target_enr.promotion_status if target_enr else None,
+        class_name=target_enr.academic_class.name if target_enr and target_enr.academic_class else None,
+        course_name=target_enr.course.name if target_enr and target_enr.course else None,
+        batch_name=target_enr.batch.name if target_enr and target_enr.batch else None,
+    )
 
 
 @router.post("", response_model=StudentListResponse, status_code=status.HTTP_201_CREATED)
@@ -707,6 +732,36 @@ async def get_student_profile(
     return profile_response
 
 
+@router.get("/{student_id}/guardians", response_model=List[GuardianResponseItem])
+async def get_student_guardians(
+    student_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns all guardian records associated with a student."""
+    stmt = (
+        select(StudentGuardian)
+        .options(selectinload(StudentGuardian.guardian))
+        .where(StudentGuardian.student_id == student_id)
+        .order_by(StudentGuardian.is_primary.desc())
+    )
+    sgs = (await db.execute(stmt)).scalars().all()
+    return [
+        GuardianResponseItem(
+            id=sg.guardian.id,
+            first_name=sg.guardian.first_name,
+            last_name=sg.guardian.last_name,
+            relation=sg.guardian.relation,
+            mobile=sg.guardian.mobile,
+            email=sg.guardian.email,
+            occupation=sg.guardian.occupation,
+            address=sg.guardian.address,
+            is_primary=sg.is_primary,
+            receives_notifications=sg.receives_notifications
+        )
+        for sg in sgs if sg.guardian
+    ]
+
+
 @router.patch("/{student_id}", response_model=StudentListResponse)
 async def update_student(
     student_id: uuid.UUID,
@@ -719,6 +774,23 @@ async def update_student(
         raise NotFoundException(f"Student with ID {student_id} not found.")
 
     update_dict = data.model_dump(exclude_unset=True)
+
+    # Extract guardian update parameters
+    g_first = update_dict.pop("guardian_first_name", None)
+    g_last = update_dict.pop("guardian_last_name", None)
+    g_name = update_dict.pop("guardian_name", None)
+    g_rel = update_dict.pop("guardian_relation", None)
+    g_mob = update_dict.pop("guardian_mobile", None)
+    g_email = update_dict.pop("guardian_email", None)
+    g_occ = update_dict.pop("guardian_occupation", None)
+
+    if g_name and not g_first:
+        parts = g_name.strip().split(maxsplit=1)
+        g_first = parts[0]
+        if len(parts) > 1 and not g_last:
+            g_last = parts[1]
+
+    # Update basic student attributes
     for field, val in update_dict.items():
         if field == "gender" and isinstance(val, str):
             setattr(student, field, val.upper())
@@ -727,11 +799,86 @@ async def update_student(
         else:
             setattr(student, field, val)
 
+    # Process Parent / Guardian updates if provided
+    has_guardian_data = any(v is not None for v in [g_first, g_last, g_rel, g_mob, g_email, g_occ])
+    if has_guardian_data:
+        sg_stmt = (
+            select(StudentGuardian)
+            .options(selectinload(StudentGuardian.guardian))
+            .where(StudentGuardian.student_id == student_id)
+            .order_by(StudentGuardian.is_primary.desc())
+        )
+        sgs = (await db.execute(sg_stmt)).scalars().all()
+
+        if sgs and sgs[0].guardian:
+            primary_g = sgs[0].guardian
+            if g_first is not None and g_first.strip():
+                primary_g.first_name = g_first.strip()
+            if g_last is not None and g_last.strip():
+                primary_g.last_name = g_last.strip()
+            if g_rel is not None and g_rel.strip():
+                primary_g.relation = g_rel.strip().upper()
+            if g_mob is not None and g_mob.strip():
+                primary_g.mobile = g_mob.strip()
+            if g_email is not None:
+                primary_g.email = g_email.strip() if g_email else None
+            if g_occ is not None:
+                primary_g.occupation = g_occ.strip() if g_occ else None
+
+            # Sync linked parent user account if provisioned
+            if primary_g.user_id:
+                g_user = await db.get(User, primary_g.user_id)
+                if g_user:
+                    if g_first is not None and g_first.strip():
+                        g_user.first_name = g_first.strip()
+                    if g_last is not None and g_last.strip():
+                        g_user.last_name = g_last.strip()
+                    if g_mob is not None and g_mob.strip():
+                        g_user.mobile = g_mob.strip()
+                    if g_email is not None:
+                        g_user.email = g_email.strip() if g_email else None
+        else:
+            # Student currently has no guardian record; create primary guardian
+            if (g_first or g_name) and g_mob:
+                new_g = Guardian(
+                    institute_id=student.institute_id,
+                    first_name=(g_first or "Parent").strip(),
+                    last_name=(g_last or student.last_name).strip(),
+                    relation=(g_rel or "FATHER").strip().upper(),
+                    mobile=g_mob.strip(),
+                    email=g_email.strip() if g_email else None,
+                    occupation=g_occ.strip() if g_occ else None
+                )
+                db.add(new_g)
+                await db.flush()
+
+                new_sg = StudentGuardian(
+                    student_id=student.id,
+                    guardian_id=new_g.id,
+                    is_primary=True,
+                    can_pickup=True,
+                    receives_notifications=True
+                )
+                db.add(new_sg)
+
     await db.commit()
-    await db.refresh(student)
+
+    # Re-fetch student with all relations for full response
+    refetch_stmt = (
+        select(Student)
+        .options(
+            selectinload(Student.enrollments).selectinload(Enrollment.academic_class),
+            selectinload(Student.enrollments).selectinload(Enrollment.course),
+            selectinload(Student.enrollments).selectinload(Enrollment.batch),
+            selectinload(Student.guardians).selectinload(StudentGuardian.guardian),
+        )
+        .where(Student.id == student_id)
+    )
+    student_refreshed = (await db.execute(refetch_stmt)).scalar_one()
+
     await cache_service.delete(CacheKeys.student_profile(student.id))
     await cache_service.delete(CacheKeys.dashboard_metrics())
-    return student
+    return _build_student_list_response(student_refreshed)
 
 
 @router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)

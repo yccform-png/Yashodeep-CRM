@@ -118,12 +118,23 @@ class StudentUpdate(BaseModel):
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
 
+    # Parent / Guardian details
+    guardian_first_name: Optional[str] = None
+    guardian_last_name: Optional[str] = None
+    guardian_name: Optional[str] = None
+    guardian_relation: Optional[str] = None
+    guardian_mobile: Optional[str] = None
+    guardian_email: Optional[str] = None
+    guardian_occupation: Optional[str] = None
+
     @field_validator(
         "middle_name", "blood_group", "mobile", "email",
         "village", "taluka", "district",
         "address_line1", "address_line2", "city", "state", "pincode",
         "institution_type", "school_college_name", "education_board", "aadhar_number", "category",
         "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relation",
+        "guardian_first_name", "guardian_last_name", "guardian_name", "guardian_relation",
+        "guardian_mobile", "guardian_email", "guardian_occupation",
         mode="before"
     )
     @classmethod
@@ -131,6 +142,21 @@ class StudentUpdate(BaseModel):
         if isinstance(v, str) and not v.strip():
             return None
         return v
+
+
+class GuardianResponseItem(BaseModel):
+    id: uuid.UUID
+    first_name: str
+    last_name: str
+    relation: str
+    mobile: str
+    email: Optional[str] = None
+    occupation: Optional[str] = None
+    is_primary: bool = True
+    receives_notifications: bool = True
+
+    class Config:
+        from_attributes = True
 
 
 class StudentListResponse(BaseModel):
@@ -164,6 +190,14 @@ class StudentListResponse(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_relation: Optional[str] = None
+
+    # Parent / Guardian Summary
+    guardian_name: Optional[str] = None
+    guardian_relation: Optional[str] = None
+    guardian_mobile: Optional[str] = None
+    guardian_email: Optional[str] = None
+    guardian_occupation: Optional[str] = None
+    guardians: Optional[List[GuardianResponseItem]] = []
 
     # Academic Session Scope Details
     enrollment_status: Optional[str] = None
