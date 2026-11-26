@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_role
 from app.core.cache import cache_service, CacheKeys
 from app.models.user import User
 from app.models.student import Student
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/reports", tags=["Reports & Analytics"])
 
 @router.get("/dashboard")
 async def get_dashboard_metrics(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(["ADMIN", "SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """

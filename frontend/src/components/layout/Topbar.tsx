@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Bell, Search, Shield, ChevronDown, Menu } from 'lucide-react';
+import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface TopbarProps {
@@ -24,15 +24,24 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
           </button>
         )}
 
-        {/* Search Context */}
-        <div className="relative w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search student, roll, invoice..."
-            className="w-full pl-9 pr-3 py-1.5 sm:py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition placeholder:text-slate-400"
-          />
-        </div>
+        {/* Search Context for Staff / Portal Title for Student & Parent */}
+        {user?.user_type === 'STUDENT' || user?.user_type === 'PARENT' ? (
+          <div className="flex items-center space-x-2 px-3 py-1.5 bg-blue-50/80 text-blue-900 border border-blue-200/80 rounded-xl text-xs font-bold">
+            <GraduationCap className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="truncate">
+              {user?.user_type === 'STUDENT' ? 'Student Self-Service Portal' : 'Parent Monitoring Portal'}
+            </span>
+          </div>
+        ) : (
+          <div className="relative w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search student, roll, invoice..."
+              className="w-full pl-9 pr-3 py-1.5 sm:py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition placeholder:text-slate-400"
+            />
+          </div>
+        )}
       </div>
 
       {/* Right Utility Widgets */}

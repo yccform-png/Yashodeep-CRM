@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   UserPlus,
@@ -17,7 +17,9 @@ import {
   ShieldCheck,
   Tag,
   Landmark,
-  X
+  X,
+  CreditCard,
+  User
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useInstitute } from '../../context/InstituteContext';
@@ -31,13 +33,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
   const { user, logout, hasRole } = useAuth();
   const { institute } = useInstitute();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  const navItems = [
+  const isStudentOrParent = user?.user_type === 'STUDENT' || user?.user_type === 'PARENT';
+  const studentId = user?.student_id;
+
+  const staffNavItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'New Admission', path: '/admissions', icon: UserPlus, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Students Registry', path: '/students', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN'] },
@@ -49,10 +55,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'Study Room (150 Seats)', path: '/study-room', icon: Armchair, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Hostel Facilities', path: '/hostel', icon: Home, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Institute Profile', path: '/institute-settings', icon: Landmark, roles: ['SUPER_ADMIN', 'ADMIN'] },
-    { name: 'Student & Parent Portals', path: '/portals', icon: Layers, roles: ['SUPER_ADMIN', 'ADMIN', 'STUDENT', 'PARENT'] },
+    { name: 'Student & Parent Portals', path: '/portals', icon: Layers, roles: ['SUPER_ADMIN', 'ADMIN'] },
   ];
 
-  const filteredItems = navItems.filter((item) => hasRole(item.roles));
+  const studentNavItems = studentId ? [
+    { name: 'My Profile & Dossier', path: `/students/${studentId}`, icon: GraduationCap },
+    { name: 'My Attendance', path: `/students/${studentId}?tab=attendance`, icon: CalendarCheck },
+    { name: 'My Exam Scorecards', path: `/students/${studentId}?tab=examinations`, icon: Award },
+    { name: 'Hostel & Study Hall', path: `/students/${studentId}?tab=hostel`, icon: Home },
+    { name: 'Official Fee Receipts', path: `/students/${studentId}?tab=payments`, icon: CreditCard },
+  ] : [
+    { name: 'My Student Portal', path: '/portals', icon: Layers }
+  ];
+
+  const filteredItems = isStudentOrParent
+    ? studentNavItems
+    : staffNavItems.filter((item) => hasRole(item.roles));
 
   return (
     <>
@@ -65,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
         aria-hidden="true"
       />
 
-      {/* Main Sidebar (Drawer on mobile/tablet, Fixed on desktop) */}
+      {/* Main Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-72 sm:w-64 bg-slate-900 text-slate-200 flex flex-col h-screen border-r border-slate-800 flex-shrink-0 select-none shadow-2xl transition-transform duration-300 ease-in-out lg:static lg:shadow-none lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
@@ -101,10 +119,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
         {/* Navigation List */}
         <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
           <div className="px-3 py-2 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-            Institute Modules
+            {isStudentOrParent
+              ? (user?.user_type === 'STUDENT' ? 'Student Self-Service' : 'Parent Monitoring')
+              : 'Institute Modules'}
           </div>
           {filteredItems.map((item) => {
             const Icon = item.icon;
+            const currentFullPath = `${location.pathname}${location.search}`;
+            const isMatch = item.path.includes('?')
+              ? currentFullPath === item.path
+              : location.pathname === item.path && (!location.search || location.search === '?tab=overview');
+
             return (
               <NavLink
                 key={item.path}
@@ -112,13 +137,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
                 onClick={() => {
                   if (onClose) onClose();
                 }}
-                className={({ isActive }) =>
-                  `flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    isActive
-                      ? 'bg-emerald-600/15 text-emerald-400 border border-emerald-500/30'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`
-                }
+                className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  isMatch
+                    ? 'bg-emerald-600/15 text-emerald-400 border border-emerald-500/30'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="truncate">{item.name}</span>
@@ -127,35 +150,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
           })}
         </nav>
 
-      {/* User Footer Profile */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-semibold text-emerald-400">
-              {user ? `${user.first_name[0]}${user.last_name[0]}` : 'U'}
-            </div>
-            <div className="truncate">
-              <p className="text-xs font-semibold text-white truncate">
-                {user ? `${user.first_name} ${user.last_name}` : 'Administrator'}
-              </p>
-              <div className="flex items-center space-x-1">
-                <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                <span className="text-[10px] text-slate-400 font-medium uppercase truncate">
-                  {user?.user_type || 'ADMIN'}
-                </span>
+        {/* User Footer Profile */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-semibold text-emerald-400">
+                {user ? `${user.first_name[0]}${user.last_name[0]}` : 'U'}
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-semibold text-white truncate">
+                  {user ? `${user.first_name} ${user.last_name}` : 'Administrator'}
+                </p>
+                <div className="flex items-center space-x-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <span className="text-[10px] text-slate-400 font-medium uppercase truncate">
+                    {user?.user_type || 'ADMIN'}
+                  </span>
+                </div>
               </div>
             </div>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={handleLogout}
-            title="Sign out"
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
-      </div>
-    </aside>
+      </aside>
     </>
   );
 };
+
+export default Sidebar;

@@ -15,7 +15,9 @@ import {
   Clock,
   ArrowRight,
   Shield,
-  Smartphone
+  Smartphone,
+  ExternalLink,
+  BookOpen
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
@@ -23,14 +25,27 @@ import { Link } from 'react-router-dom';
 export const Portals: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'SUPER_ADMIN';
-  const [activePortal, setActivePortal] = useState<'STUDENT' | 'PARENT' | 'ADMIN' | 'SUPER_ADMIN'>('STUDENT');
+  const isAdmin = user?.user_type === 'ADMIN';
+  const isStudent = user?.user_type === 'STUDENT';
+  const isParent = user?.user_type === 'PARENT';
+  const isStaff = isSuperAdmin || isAdmin;
 
-  const portalOptions = [
-    { key: 'STUDENT', label: 'Student Self-Service Portal', icon: User },
-    { key: 'PARENT', label: 'Parent Guardian Portal', icon: Users },
-    { key: 'ADMIN', label: 'Admin Unified Operations Hub', icon: ShieldCheck },
-    ...(isSuperAdmin ? [{ key: 'SUPER_ADMIN', label: 'Super Admin Master & Cashier Desk', icon: DollarSign }] : []),
-  ];
+  const defaultPortal = isParent ? 'PARENT' : isStudent ? 'STUDENT' : isAdmin ? 'ADMIN' : 'SUPER_ADMIN';
+  const [activePortal, setActivePortal] = useState<'STUDENT' | 'PARENT' | 'ADMIN' | 'SUPER_ADMIN'>(defaultPortal);
+
+  // Role-filtered portal tabs
+  const portalOptions = isStaff
+    ? [
+        { key: 'ADMIN', label: 'Admin Unified Operations Hub', icon: ShieldCheck },
+        ...(isSuperAdmin ? [{ key: 'SUPER_ADMIN', label: 'Super Admin Executive Desk', icon: DollarSign }] : []),
+        { key: 'STUDENT', label: 'Student Self-Service Preview', icon: User },
+        { key: 'PARENT', label: 'Parent Portal Preview', icon: Users },
+      ]
+    : isParent
+    ? [{ key: 'PARENT', label: 'Parent Guardian Portal', icon: Users }]
+    : [{ key: 'STUDENT', label: 'Student Self-Service Portal', icon: User }];
+
+  const studentDossierPath = user?.student_id ? `/students/${user.student_id}` : '/portals';
 
   return (
     <div className="space-y-6">
@@ -38,166 +53,301 @@ export const Portals: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="p-2.5 rounded-xl bg-slate-900 text-white shrink-0">
-            <Layers className="w-6 h-6" />
+            {isStaff ? <Layers className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900">Institute Portals & Access Gateway</h1>
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900">
+              {isStudent
+                ? 'Student Self-Service Portal'
+                : isParent
+                ? 'Parent & Guardian Monitoring Portal'
+                : 'Institute Portals & Access Gateway'}
+            </h1>
             <p className="text-xs sm:text-sm text-slate-500">
-              4-Role RBAC Model • Strict Financial Shielding • Dedicated Student &amp; Parent Access
+              {isStudent
+                ? 'Your personal academic records, daily attendance, examination scorecards, and accommodation details.'
+                : isParent
+                ? 'Real-time performance alerts, attendance ledger, hostel status, and verified fee receipts for your ward.'
+                : '4-Role RBAC Model • Strict Financial Shielding • Dedicated Student & Parent Gateways'}
             </p>
           </div>
         </div>
 
         <div className="text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 self-start md:self-auto flex items-center space-x-1.5">
           <Shield className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Logged in as: <strong className="text-slate-900">{user?.first_name} {user?.last_name}</strong> ({user?.user_type})</span>
+          <span>
+            Signed in as: <strong className="text-slate-900">{user?.first_name} {user?.last_name}</strong> ({user?.user_type})
+          </span>
         </div>
       </div>
 
-      {/* Role Navigation Pills */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 overflow-x-auto pb-1">
-        {portalOptions.map((p) => {
-          const Icon = p.icon;
-          return (
-            <button
-              key={p.key}
-              onClick={() => setActivePortal(p.key as any)}
-              className={`flex items-center space-x-2 px-4 py-2.5 font-semibold text-sm border-b-2 transition-all whitespace-nowrap ${
-                activePortal === p.key
-                  ? 'border-emerald-600 text-emerald-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{p.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Portal 1: STUDENT */}
-      {activePortal === 'STUDENT' && (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-blue-900 to-slate-900 p-6 rounded-2xl text-white space-y-2">
-            <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold">
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Student Self-Service View</span>
-            </div>
-            <h2 className="text-lg font-bold">Enrolled Student Personal Gateway</h2>
-            <p className="text-sm text-blue-200">
-              Students authenticate with PRN / Roll Number. Access is strictly scoped to their personal marks, attendance records, study seat, and hostel bed.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                <Award className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 text-base">Academic Scorecards</h3>
-              <p className="text-xs text-slate-500">
-                View weekly unit tests, mock CET tests, subject percentage, and negative marking analytics.
-              </p>
-              <Link to="/examinations" className="inline-flex items-center space-x-1.5 text-xs font-bold text-purple-600 hover:text-purple-700">
-                <span>View Results</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
-                <CalendarCheck className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 text-base">Attendance History</h3>
-              <p className="text-xs text-slate-500">
-                Track personal monthly attendance percentage and daily present/absent logs.
-              </p>
-              <Link to="/attendance" className="inline-flex items-center space-x-1.5 text-xs font-bold text-teal-600 hover:text-teal-700">
-                <span>View Attendance</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Home className="w-5 h-5" />
-              </div>
-              <h3 className="font-bold text-slate-900 text-base">Hostel Bed & Study Seat</h3>
-              <p className="text-xs text-slate-500">
-                Check allocated room, upper/lower bunk berth number, and reserved 150-seat study hall desk.
-              </p>
-              <Link to="/students" className="inline-flex items-center space-x-1.5 text-xs font-bold text-blue-600 hover:text-blue-700">
-                <span>View Allocation</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
+      {/* Role Navigation Pills (Only shown to staff when multiple views are available) */}
+      {isStaff && portalOptions.length > 1 && (
+        <div className="flex items-center space-x-2 border-b border-slate-200 overflow-x-auto pb-1">
+          {portalOptions.map((p) => {
+            const Icon = p.icon;
+            return (
+              <button
+                key={p.key}
+                onClick={() => setActivePortal(p.key as any)}
+                className={`flex items-center space-x-2 px-4 py-2.5 font-semibold text-sm border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                  activePortal === p.key
+                    ? 'border-emerald-600 text-emerald-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* Portal 2: PARENT */}
-      {activePortal === 'PARENT' && (
+      {/* ========================================================================= */}
+      {/* PORTAL 1: STUDENT */}
+      {/* ========================================================================= */}
+      {(activePortal === 'STUDENT' || isStudent) && (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-emerald-950 to-slate-900 p-6 rounded-2xl text-white space-y-2">
-            <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold">
-              <Users className="w-3.5 h-3.5" />
-              <span>Parent / Guardian View</span>
+          {/* Student Welcome Hero Card */}
+          <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 p-6 sm:p-7 rounded-2xl text-white space-y-4 shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Enrolled Student Workspace</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                  Welcome, {user?.first_name} {user?.last_name}!
+                </h2>
+                <p className="text-xs sm:text-sm text-blue-200 max-w-2xl leading-relaxed">
+                  Your academic home at Yashodeep Coaching Classes. Track your live lecture attendance, inspect test scorecards, verify hostel berth allocations, and download official fee receipts anytime.
+                </p>
+              </div>
+
+              {user?.student_id && (
+                <Link
+                  to={`/students/${user.student_id}`}
+                  className="inline-flex items-center justify-center space-x-2 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/25 transition shrink-0 cursor-pointer"
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>Launch My Full Dossier</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              )}
             </div>
-            <h2 className="text-lg font-bold">Parent Real-Time Monitoring Portal</h2>
-            <p className="text-sm text-emerald-200">
-              Parents authenticate using their Registered Mobile Number. Strictly locked to their child's progress, official fee receipts, and performance alerts.
-            </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Receipt className="w-5 h-5" />
+          {/* Student Quick Action Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            {/* Card 1: My Profile & Curriculum */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-blue-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Curriculum &amp; Batch</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Enrolled courses, active batch schedule, teacher assignments, and syllabus progress.
+                </p>
               </div>
-              <h3 className="font-bold text-slate-900 text-base">Fee Payment Receipts</h3>
-              <p className="text-xs text-slate-500">
-                Download timestamped electronic payment receipts and review installment schedules.
-              </p>
-              <div className="text-xs font-medium text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
-                ✓ Available via WhatsApp &amp; Parent Portal
-              </div>
+              <Link
+                to={`${studentDossierPath}?tab=academics`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 pt-2 border-t border-slate-100"
+              >
+                <span>View Curriculum</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                <Award className="w-5 h-5" />
+            {/* Card 2: Attendance Roll Call */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-teal-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <CalendarCheck className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Attendance History</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Daily classroom roll call, monthly turnout percentage, and present/absent session logs.
+                </p>
               </div>
-              <h3 className="font-bold text-slate-900 text-base">Official Scorecard Reports</h3>
-              <p className="text-xs text-slate-500">
-                Instant access to certified exam results and subject performance summaries.
-              </p>
-              <Link to="/examinations" className="inline-flex items-center space-x-1.5 text-xs font-bold text-purple-600 hover:text-purple-700">
+              <Link
+                to={`${studentDossierPath}?tab=attendance`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-teal-600 hover:text-teal-700 pt-2 border-t border-slate-100"
+              >
+                <span>Check Attendance</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 3: Exam Scorecards */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-purple-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Award className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Exam Scorecards</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Weekly unit tests, mock CET scores, subject marks breakdown, and class standings.
+                </p>
+              </div>
+              <Link
+                to={`${studentDossierPath}?tab=examinations`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 pt-2 border-t border-slate-100"
+              >
                 <span>View Scorecards</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <CalendarCheck className="w-5 h-5" />
+            {/* Card 4: Hostel & Study Hall */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-amber-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <Home className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Hostel &amp; Study Hall</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Allocated residential bunk bed, room sequence number, and reserved study desk allocation.
+                </p>
               </div>
-              <h3 className="font-bold text-slate-900 text-base">Attendance Notifications</h3>
-              <p className="text-xs text-slate-500">
-                Real-time absent alerts dispatched via Meta WhatsApp Cloud API and Brevo Email.
-              </p>
-              <Link to="/attendance" className="inline-flex items-center space-x-1.5 text-xs font-bold text-amber-600 hover:text-amber-700">
-                <span>View Roll Call</span>
-                <ArrowRight className="w-4 h-4" />
+              <Link
+                to={`${studentDossierPath}?tab=hostel`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-amber-600 hover:text-amber-700 pt-2 border-t border-slate-100"
+              >
+                <span>View Facilities</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
           </div>
         </div>
       )}
 
-      {/* Portal 3: ADMIN */}
-      {activePortal === 'ADMIN' && (
+      {/* ========================================================================= */}
+      {/* PORTAL 2: PARENT */}
+      {/* ========================================================================= */}
+      {(activePortal === 'PARENT' || isParent) && !isStudent && (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-teal-900 to-slate-900 p-6 rounded-2xl text-white space-y-2">
+          {/* Parent Welcome Hero Card */}
+          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 p-6 sm:p-7 rounded-2xl text-white space-y-4 shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold">
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Parent &amp; Guardian Gateway</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+                  Welcome, {user?.first_name} {user?.last_name}!
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-200 max-w-2xl leading-relaxed">
+                  Monitor your child's academic development in real time. Inspect daily attendance records, weekly test scorecards, and access official fee receipts with dual-copy verification.
+                </p>
+              </div>
+
+              {user?.student_id && (
+                <Link
+                  to={`/students/${user.student_id}`}
+                  className="inline-flex items-center justify-center space-x-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/25 transition shrink-0 cursor-pointer"
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>View Ward Profile</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Parent Action Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            {/* Card 1: Attendance */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-emerald-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <CalendarCheck className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Turnout &amp; Roll Call</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Turnout statistics, present days, absent records, and automated absence notifications.
+                </p>
+              </div>
+              <Link
+                to={`${studentDossierPath}?tab=attendance`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-teal-600 hover:text-teal-700 pt-2 border-t border-slate-100"
+              >
+                <span>View Roll Call</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 2: Exam Scorecards */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-purple-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Award className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Scorecards &amp; Marks</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Official test marks, subject percentages, chapter-wise evaluations, and teacher remarks.
+                </p>
+              </div>
+              <Link
+                to={`${studentDossierPath}?tab=examinations`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 pt-2 border-t border-slate-100"
+              >
+                <span>View Scorecards</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 3: Fee Receipts */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-emerald-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Official Fee Receipts</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Download certified electronic payment receipts with stamp and review installment schedules.
+                </p>
+              </div>
+              <Link
+                to={`${studentDossierPath}?tab=payments`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 pt-2 border-t border-slate-100"
+              >
+                <span>Download Receipts</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 4: Hostel & Study Hall */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between hover:border-amber-300 transition">
+              <div className="space-y-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <Home className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Campus Accommodations</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Hostel room number, assigned bunk bed tier, and 150-seat study hall desk reservations.
+                </p>
+              </div>
+              <Link
+                to={`${studentDossierPath}?tab=hostel`}
+                className="inline-flex items-center space-x-1.5 text-xs font-bold text-amber-600 hover:text-amber-700 pt-2 border-t border-slate-100"
+              >
+                <span>View Facilities</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PORTAL 3: ADMIN UNIFIED OPERATIONS (STAFF ONLY) */}
+      {/* ========================================================================= */}
+      {activePortal === 'ADMIN' && isStaff && (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-teal-900 to-slate-900 p-6 rounded-2xl text-white space-y-2 shadow-sm">
             <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 text-xs font-semibold">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Unified Administrator Desk</span>
@@ -208,8 +358,8 @@ export const Portals: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
                 <CalendarCheck className="w-4 h-4" />
               </div>
@@ -221,7 +371,7 @@ export const Portals: React.FC = () => {
               </Link>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
                 <Award className="w-4 h-4" />
               </div>
@@ -233,7 +383,7 @@ export const Portals: React.FC = () => {
               </Link>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
                 <Home className="w-4 h-4" />
               </div>
@@ -245,7 +395,7 @@ export const Portals: React.FC = () => {
               </Link>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
                 <Armchair className="w-4 h-4" />
               </div>
@@ -260,10 +410,12 @@ export const Portals: React.FC = () => {
         </div>
       )}
 
-      {/* Portal 4: SUPER_ADMIN */}
+      {/* ========================================================================= */}
+      {/* PORTAL 4: SUPER_ADMIN (OWNER ONLY) */}
+      {/* ========================================================================= */}
       {activePortal === 'SUPER_ADMIN' && isSuperAdmin && (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-slate-900 p-6 rounded-2xl text-white space-y-2">
+          <div className="bg-gradient-to-r from-amber-950 via-slate-900 to-slate-900 p-6 rounded-2xl text-white space-y-2 shadow-sm">
             <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold">
               <DollarSign className="w-3.5 h-3.5" />
               <span>Sole Financial &amp; Cashier Authority</span>
@@ -274,8 +426,8 @@ export const Portals: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
                 <DollarSign className="w-5 h-5" />
               </div>
@@ -289,7 +441,7 @@ export const Portals: React.FC = () => {
               </Link>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
@@ -303,7 +455,7 @@ export const Portals: React.FC = () => {
               </Link>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
                 <ShieldCheck className="w-5 h-5" />
               </div>
@@ -322,3 +474,5 @@ export const Portals: React.FC = () => {
     </div>
   );
 };
+
+export default Portals;

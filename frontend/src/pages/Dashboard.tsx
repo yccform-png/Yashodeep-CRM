@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   Users,
   DollarSign,
@@ -21,6 +21,13 @@ import { useAuth } from '../context/AuthContext';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+
+  // Strict RBAC Safeguard: Students and Parents should never access institute operational overview
+  if (user?.user_type === 'STUDENT' || user?.user_type === 'PARENT') {
+    const target = user.student_id ? `/students/${user.student_id}` : '/portals';
+    return <Navigate to={target} replace />;
+  }
+
   const isSuperAdmin = user?.user_type === 'SUPER_ADMIN';
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);

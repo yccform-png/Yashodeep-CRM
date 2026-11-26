@@ -19,6 +19,38 @@ from app.modules.authentication.schemas import LoginRequest, TokenResponse, User
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+async def _get_student_id_for_user(db: AsyncSession, user: User) -> Optional[uuid.UUID]:
+    """Helper to resolve student_id for STUDENT or PARENT user accounts."""
+    if not user:
+        return None
+    student_id = None
+    if user.user_type == "STUDENT":
+        s_stmt = select(Student.id).where(Student.user_id == user.id)
+        student_id = (await db.execute(s_stmt)).scalar_one_or_none()
+        if not student_id:
+            sua_stmt = select(StudentUserAccount.student_id).where(StudentUserAccount.user_id == user.id)
+            student_id = (await db.execute(sua_stmt)).scalar_one_or_none()
+        if not student_id and user.mobile:
+            s_m_stmt = select(Student.id).where(Student.mobile == user.mobile)
+            student_id = (await db.execute(s_m_stmt)).scalar_one_or_none()
+        if not student_id and user.email:
+            s_e_stmt = select(Student.id).where(Student.email == user.email)
+            student_id = (await db.execute(s_e_stmt)).scalar_one_or_none()
+    elif user.user_type == "PARENT":
+        g_stmt = select(Guardian.id).where(Guardian.user_id == user.id)
+        guardian_id = (await db.execute(g_stmt)).scalar_one_or_none()
+        if not guardian_id:
+            gua_stmt = select(GuardianUserAccount.guardian_id).where(GuardianUserAccount.user_id == user.id)
+            guardian_id = (await db.execute(gua_stmt)).scalar_one_or_none()
+        if not guardian_id and user.mobile:
+            g_m_stmt = select(Guardian.id).where(Guardian.mobile == user.mobile)
+            guardian_id = (await db.execute(g_m_stmt)).scalar_one_or_none()
+        if guardian_id:
+            sg_stmt = select(StudentGuardian.student_id).where(StudentGuardian.guardian_id == guardian_id)
+            student_id = (await db.execute(sg_stmt)).scalars().first()
+    return student_id
+
+
 async def _resolve_user_and_student_id(db: AsyncSession, identifier: str) -> Tuple[Optional[User], Optional[uuid.UUID]]:
     """
     Resolves a user from:
@@ -50,22 +82,7 @@ async def _resolve_user_and_student_id(db: AsyncSession, identifier: str) -> Tup
     user = (await db.execute(stmt)).scalars().first()
 
     if user:
-        student_id = None
-        if user.user_type == "STUDENT":
-            s_stmt = select(Student.id).where(Student.user_id == user.id)
-            student_id = (await db.execute(s_stmt)).scalar_one_or_none()
-            if not student_id:
-                sua_stmt = select(StudentUserAccount.student_id).where(StudentUserAccount.user_id == user.id)
-                student_id = (await db.execute(sua_stmt)).scalar_one_or_none()
-        elif user.user_type == "PARENT":
-            g_stmt = select(Guardian.id).where(Guardian.user_id == user.id)
-            guardian_id = (await db.execute(g_stmt)).scalar_one_or_none()
-            if not guardian_id:
-                gua_stmt = select(GuardianUserAccount.guardian_id).where(GuardianUserAccount.user_id == user.id)
-                guardian_id = (await db.execute(gua_stmt)).scalar_one_or_none()
-            if guardian_id:
-                sg_stmt = select(StudentGuardian.student_id).where(StudentGuardian.guardian_id == guardian_id)
-                student_id = (await db.execute(sg_stmt)).scalars().first()
+        student_id = await _get_student_id_for_user(db, user)
         return user, student_id
 
     # 2. Student PRN, Student Code, or Roll Number Lookup
@@ -193,22 +210,7 @@ async def get_me(
         for p in r.permissions:
             perms_set.add(p.code)
 
-    student_id = None
-    if current_user.user_type == "STUDENT":
-        s_stmt = select(Student.id).where(Student.user_id == current_user.id)
-        student_id = (await db.execute(s_stmt)).scalar_one_or_none()
-        if not student_id:
-            sua_stmt = select(StudentUserAccount.student_id).where(StudentUserAccount.user_id == current_user.id)
-            student_id = (await db.execute(sua_stmt)).scalar_one_or_none()
-    elif current_user.user_type == "PARENT":
-        g_stmt = select(Guardian.id).where(Guardian.user_id == current_user.id)
-        guardian_id = (await db.execute(g_stmt)).scalar_one_or_none()
-        if not guardian_id:
-            gua_stmt = select(GuardianUserAccount.guardian_id).where(GuardianUserAccount.user_id == current_user.id)
-            guardian_id = (await db.execute(gua_stmt)).scalar_one_or_none()
-        if guardian_id:
-            sg_stmt = select(StudentGuardian.student_id).where(StudentGuardian.guardian_id == guardian_id)
-            student_id = (await db.execute(sg_stmt)).scalars().first()
+    student_id = await _get_student_id_for_user(db, current_user)
 
     return UserResponse(
         id=current_user.id,
@@ -225,7 +227,10 @@ async def get_me(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(current_user: User = Depends(get_current_user)):
+async def refresh_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Sliding session refresh endpoint.
     Issues a fresh access token for an actively working user to keep their session alive.
@@ -239,12 +244,15 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         for p in r.permissions:
             perms_set.add(p.code)
 
+    student_id = await _get_student_id_for_user(db, current_user)
+
     token = create_access_token(
         subject=current_user.id,
         extra_claims={
             "email": current_user.email,
             "user_type": current_user.user_type,
-            "roles": roles_list
+            "roles": roles_list,
+            "student_id": str(student_id) if student_id else None
         }
     )
 
@@ -257,7 +265,8 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         last_name=current_user.last_name,
         user_type=current_user.user_type,
         roles=roles_list,
-        permissions=sorted(list(perms_set))
+        permissions=sorted(list(perms_set)),
+        student_id=student_id
     )
 
 

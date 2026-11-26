@@ -49,17 +49,34 @@ import { useAuth } from '../context/AuthContext';
 export const StudentProfile: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'SUPER_ADMIN';
+  const isStaff = user?.user_type === 'SUPER_ADMIN' || user?.user_type === 'ADMIN';
+  const isStudentOrParent = user?.user_type === 'STUDENT' || user?.user_type === 'PARENT';
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview');
   const [attStatusFilter, setAttStatusFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'LATE'>('ALL');
   const [examStatusFilter, setExamStatusFilter] = useState<'ALL' | 'PASSED' | 'FAILED' | 'ABSENT'>('ALL');
   const [examCourseFilter, setExamCourseFilter] = useState<string>('ALL');
   const [examSubjectFilter, setExamSubjectFilter] = useState<string>('ALL');
   const [examSearch, setExamSearch] = useState('');
+
+  // Privacy & Access Control Safeguard: Students/Parents can strictly only view their own profile
+  useEffect(() => {
+    if (isStudentOrParent && user?.student_id && id && id !== user.student_id) {
+      navigate(`/students/${user.student_id}`, { replace: true });
+    }
+  }, [id, user, isStudentOrParent, navigate]);
+
+  // Sync tab with URL search parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // Invoice, Receipt & Admission Form Print Modals
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -326,23 +343,33 @@ export const StudentProfile: React.FC = () => {
 
   const skillAcademics = academics.filter((a: any) => a.enrollment_id !== primaryAcademic?.enrollment_id && a.status === 'ACTIVE');
 
-  const tabs = [
-    { id: 'overview', label: '1. Overview', icon: User },
-    { id: 'academics', label: '2. Academics', icon: GraduationCap },
-    { id: 'services', label: '3. Services', icon: Layers },
-    { id: 'hostel', label: '4. Hostel', icon: Home },
-    { id: 'study_room', label: '5. Study Room', icon: Armchair },
-    ...(isSuperAdmin
-      ? [
-          { id: 'fees', label: '6. Fees & Invoices', icon: DollarSign },
-          { id: 'payments', label: '7. Payments & Receipts', icon: CreditCard },
-        ]
-      : []),
-    { id: 'attendance', label: `${isSuperAdmin ? '8' : '6'}. Attendance`, icon: CalendarCheck },
-    { id: 'examinations', label: `${isSuperAdmin ? '9' : '7'}. Examinations`, icon: Award },
-    { id: 'documents', label: `${isSuperAdmin ? '10' : '8'}. Documents`, icon: FileText },
-    { id: 'history', label: `${isSuperAdmin ? '11' : '9'}. Activity History`, icon: History }
-  ];
+  const tabs = isStudentOrParent
+    ? [
+        { id: 'overview', label: '1. My Profile', icon: User },
+        { id: 'academics', label: '2. Curriculum & Batch', icon: GraduationCap },
+        { id: 'attendance', label: '3. Attendance History', icon: CalendarCheck },
+        { id: 'examinations', label: '4. Exam Scorecards', icon: Award },
+        { id: 'hostel', label: '5. Hostel Room & Bed', icon: Home },
+        { id: 'study_room', label: '6. Study Hall Seat', icon: Armchair },
+        { id: 'payments', label: '7. Official Fee Receipts', icon: CreditCard },
+      ]
+    : [
+        { id: 'overview', label: '1. Overview', icon: User },
+        { id: 'academics', label: '2. Academics', icon: GraduationCap },
+        { id: 'services', label: '3. Services', icon: Layers },
+        { id: 'hostel', label: '4. Hostel', icon: Home },
+        { id: 'study_room', label: '5. Study Room', icon: Armchair },
+        ...(isSuperAdmin
+          ? [
+              { id: 'fees', label: '6. Fees & Invoices', icon: DollarSign },
+              { id: 'payments', label: '7. Payments & Receipts', icon: CreditCard },
+            ]
+          : []),
+        { id: 'attendance', label: `${isSuperAdmin ? '8' : '6'}. Attendance`, icon: CalendarCheck },
+        { id: 'examinations', label: `${isSuperAdmin ? '9' : '7'}. Examinations`, icon: Award },
+        { id: 'documents', label: `${isSuperAdmin ? '10' : '8'}. Documents`, icon: FileText },
+        { id: 'history', label: `${isSuperAdmin ? '11' : '9'}. Activity History`, icon: History }
+      ];
 
   return (
     <div className="space-y-6 w-full">
@@ -458,30 +485,34 @@ export const StudentProfile: React.FC = () => {
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-2 sm:pt-0 sm:border-l sm:pl-3 border-slate-200">
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition shadow-xs cursor-pointer"
-              title="Edit Student Demographics & Profile"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-              <span>Edit</span>
-            </button>
-            <button
-              onClick={() => setIsDeleteModalOpen(true)}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition shadow-xs cursor-pointer"
-              title="Delete Student Record"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-600" />
-              <span>Delete</span>
-            </button>
-            <Link
-              to="/students"
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition shadow-xs"
-              title="Return to Students Registry"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
-              <span>Registry</span>
-            </Link>
+            {isStaff && (
+              <>
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition shadow-xs cursor-pointer"
+                  title="Edit Student Demographics & Profile"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition shadow-xs cursor-pointer"
+                  title="Delete Student Record"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                  <span>Delete</span>
+                </button>
+                <Link
+                  to="/students"
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition shadow-xs"
+                  title="Return to Students Registry"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Registry</span>
+                </Link>
+              </>
+            )}
             <button
               onClick={() => setIsAdmissionFormOpen(true)}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition shadow-xs cursor-pointer"
@@ -528,30 +559,32 @@ export const StudentProfile: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setConvertInstallments(1);
-                  setConvertDiscount(0);
-                  setConvertCustomInstallments(getConvertDefaultInstallments(1));
-                  setShowConvertTrialModal(true);
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm Full Admission</span>
-              </button>
-              <button
-                type="button"
-                disabled={closingTrial}
-                onClick={handleCloseTrial}
-                className="px-3.5 py-2 bg-white hover:bg-rose-50 border border-slate-300 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-                <span>{closingTrial ? 'Closing...' : 'Close Trial (Dropout)'}</span>
-              </button>
-            </div>
+            {isStaff && (
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConvertInstallments(1);
+                    setConvertDiscount(0);
+                    setConvertCustomInstallments(getConvertDefaultInstallments(1));
+                    setShowConvertTrialModal(true);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm Full Admission</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={closingTrial}
+                  onClick={handleCloseTrial}
+                  className="px-3.5 py-2 bg-white hover:bg-rose-50 border border-slate-300 text-slate-700 hover:text-rose-700 text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                  <span>{closingTrial ? 'Closing...' : 'Close Trial (Dropout)'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -583,8 +616,15 @@ export const StudentProfile: React.FC = () => {
               return (
                 <button
                   key={t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-semibold transition shrink-0 ${
+                  onClick={() => {
+                    setActiveTab(t.id);
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set('tab', t.id);
+                      return next;
+                    }, { replace: true });
+                  }}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-semibold transition shrink-0 cursor-pointer ${
                     activeTab === t.id
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -852,14 +892,16 @@ export const StudentProfile: React.FC = () => {
               )}
               <div className="flex items-center justify-between border-b pb-2">
                 <h4 className="font-bold text-slate-900">Academic Enrollments &amp; Curriculum Record</h4>
-                <button
-                  type="button"
-                  onClick={openSkillEnrollModal}
-                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 shadow-xs transition"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>+ Enroll in Skill Course</span>
-                </button>
+                {isStaff && (
+                  <button
+                    type="button"
+                    onClick={openSkillEnrollModal}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>+ Enroll in Skill Course</span>
+                  </button>
+                )}
               </div>
               {academics.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-xl space-y-2">

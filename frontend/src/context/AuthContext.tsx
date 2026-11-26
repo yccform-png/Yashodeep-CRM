@@ -31,6 +31,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
 
+  // Ensure student_id is populated for student & parent accounts if missing in cache
+  useEffect(() => {
+    if (token && user && (user.user_type === 'STUDENT' || user.user_type === 'PARENT') && !user.student_id) {
+      api.get('/auth/me')
+        .then((res) => {
+          if (res.data?.student_id) {
+            const updatedUser = { ...user, student_id: res.data.student_id };
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+          }
+        })
+        .catch((err) => console.warn('Could not sync student_id:', err));
+    }
+  }, [token, user]);
+
   const login = (newToken: string, userData: User) => {
     setToken(newToken);
     setUser(userData);
