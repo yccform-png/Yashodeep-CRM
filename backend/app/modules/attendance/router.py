@@ -24,6 +24,7 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
 @router.get("/batch-subjects")
 async def list_attendance_batch_subjects(
+    academic_year_id: Optional[uuid.UUID] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Returns available batch-subject combinations for attendance taking."""
@@ -38,6 +39,8 @@ async def list_attendance_batch_subjects(
         )
         .where(Batch.is_active == True)
     )
+    if academic_year_id:
+        stmt = stmt.where(Batch.academic_year_id == academic_year_id)
     res = await db.execute(stmt)
     bss = res.scalars().all()
     out = []
@@ -108,6 +111,7 @@ async def get_batch_subject_students(
         course_batches = (await db.execute(course_batches_stmt)).scalars().all()
         has_multiple_batches = len(course_batches) > 1
 
+        ay_filter = [Enrollment.academic_year_id == bs.batch.academic_year_id] if (bs.batch and bs.batch.academic_year_id) else []
         if has_multiple_batches:
             # Strictly pull only students enrolled for this specific batch
             enr_stmt = (
@@ -118,7 +122,8 @@ async def get_batch_subject_students(
                         and_(Enrollment.course_id == bs.batch.course_id, Enrollment.batch_id == bs.batch_id),
                         Enrollment.batch_id == bs.batch_id
                     ),
-                    Enrollment.status == "ACTIVE"
+                    Enrollment.status == "ACTIVE",
+                    *ay_filter
                 )
             )
         else:
@@ -134,7 +139,8 @@ async def get_batch_subject_students(
                             Enrollment.enrollment_group_id.isnot(None)
                         )
                     ),
-                    Enrollment.status == "ACTIVE"
+                    Enrollment.status == "ACTIVE",
+                    *ay_filter
                 )
             )
         enrs = (await db.execute(enr_stmt)).scalars().all()
@@ -228,6 +234,7 @@ async def get_batch_subject_students(
 
 @router.get("/sessions")
 async def list_attendance_sessions(
+    academic_year_id: Optional[uuid.UUID] = None,
     batch_subject_id: Optional[uuid.UUID] = None,
     session_date: Optional[date] = None,
     db: AsyncSession = Depends(get_db)
@@ -241,6 +248,13 @@ async def list_attendance_sessions(
             selectinload(AttendanceSession.records)
         )
     )
+    if academic_year_id:
+        stmt = (
+            stmt
+            .join(BatchSubject, AttendanceSession.batch_subject_id == BatchSubject.id)
+            .join(Batch, BatchSubject.batch_id == Batch.id)
+            .where(Batch.academic_year_id == academic_year_id)
+        )
     if batch_subject_id:
         stmt = stmt.where(AttendanceSession.batch_subject_id == batch_subject_id)
     if session_date:

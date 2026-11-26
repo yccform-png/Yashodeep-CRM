@@ -20,6 +20,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import apiClient from '../api/client';
+import { useAcademicYear } from '../context/AcademicYearContext';
 
 interface BatchSubjectOption {
   id: string;
@@ -79,6 +80,8 @@ interface AttendanceSessionItem {
 }
 
 export const AttendanceMarking: React.FC = () => {
+  const { selectedAcademicYear } = useAcademicYear();
+
   const [batchSubjects, setBatchSubjects] = useState<BatchSubjectOption[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [selectedBatchSubjectId, setSelectedBatchSubjectId] = useState<string>('');
@@ -130,12 +133,14 @@ export const AttendanceMarking: React.FC = () => {
   const [topicCovered, setTopicCovered] = useState<string>('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const fetchInitialData = async () => {
+  const fetchInitialData = async (targetAyId?: string) => {
     try {
       setLoading(true);
+      const ayToUse = targetAyId !== undefined ? targetAyId : selectedAcademicYear?.id;
+      const params = ayToUse ? { academic_year_id: ayToUse } : undefined;
       const [bsRes, sessRes] = await Promise.all([
-        apiClient.get<BatchSubjectOption[]>('/attendance/batch-subjects'),
-        apiClient.get<AttendanceSessionItem[]>('/attendance/sessions')
+        apiClient.get<BatchSubjectOption[]>('/attendance/batch-subjects', { params }),
+        apiClient.get<AttendanceSessionItem[]>('/attendance/sessions', { params })
       ]);
 
       setBatchSubjects(bsRes.data);
@@ -147,6 +152,10 @@ export const AttendanceMarking: React.FC = () => {
         setSelectedBatchId(firstBatchId);
         setSelectedBatchSubjectId(firstSubjectId);
         fetchRoster(firstSubjectId, sessionDate);
+      } else {
+        setSelectedBatchId('');
+        setSelectedBatchSubjectId('');
+        setRoster([]);
       }
     } catch (err: any) {
       console.error('Failed to load attendance initial data', err);
@@ -182,8 +191,8 @@ export const AttendanceMarking: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchInitialData();
-  }, []);
+    fetchInitialData(selectedAcademicYear?.id);
+  }, [selectedAcademicYear?.id]);
 
   const handleBatchChange = (newBatchId: string) => {
     setSelectedBatchId(newBatchId);
@@ -273,7 +282,9 @@ export const AttendanceMarking: React.FC = () => {
       });
 
       // Refresh session history
-      const updatedSess = await apiClient.get<AttendanceSessionItem[]>('/attendance/sessions');
+      const updatedSess = await apiClient.get<AttendanceSessionItem[]>('/attendance/sessions', {
+        params: selectedAcademicYear?.id ? { academic_year_id: selectedAcademicYear.id } : undefined
+      });
       setRecentSessions(updatedSess.data);
     } catch (err: any) {
       setFeedback({
@@ -346,7 +357,14 @@ export const AttendanceMarking: React.FC = () => {
             <CalendarCheck className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900">Academic Attendance Terminal</h1>
+            <div className="flex items-center space-x-2.5 flex-wrap">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900">Academic Attendance Terminal</h1>
+              {selectedAcademicYear && (
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                  {selectedAcademicYear.name}
+                </span>
+              )}
+            </div>
             <p className="text-xs sm:text-sm text-slate-500">
               Batch Rosters • Real-Time Teacher Marking • Audit Trails • Topic Progress Tracking
             </p>
@@ -354,8 +372,8 @@ export const AttendanceMarking: React.FC = () => {
         </div>
 
         <button
-          onClick={fetchInitialData}
-          className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all self-start sm:self-auto"
+          onClick={() => fetchInitialData()}
+          className="flex items-center justify-center space-x-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all self-start sm:self-auto cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Terminal</span>
@@ -401,19 +419,24 @@ export const AttendanceMarking: React.FC = () => {
                 <select
                   value={selectedBatchId}
                   onChange={(e) => handleBatchChange(e.target.value)}
-                  className="w-full p-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  disabled={batchGroups.length === 0}
+                  className="w-full p-2.5 text-sm font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 disabled:opacity-60"
                 >
-                  {batchGroups.map((bg) => {
-                    const hasDiv = /div(ision)?/i.test(bg.batch_name);
-                    const label = hasDiv
-                      ? `${bg.batch_name} (${bg.enrolled_count} ${bg.enrolled_count === 1 ? 'Student' : 'Students'})`
-                      : `${bg.batch_name} — Division ${bg.division} (${bg.enrolled_count} ${bg.enrolled_count === 1 ? 'Student' : 'Students'})`;
-                    return (
-                      <option key={bg.batch_id} value={bg.batch_id}>
-                        {label}
-                      </option>
-                    );
-                  })}
+                  {batchGroups.length === 0 ? (
+                    <option value="">No batches configured for {selectedAcademicYear?.name || 'this session'}</option>
+                  ) : (
+                    batchGroups.map((bg) => {
+                      const hasDiv = /div(ision)?/i.test(bg.batch_name);
+                      const label = hasDiv
+                        ? `${bg.batch_name} (${bg.enrolled_count} ${bg.enrolled_count === 1 ? 'Student' : 'Students'})`
+                        : `${bg.batch_name} — Division ${bg.division} (${bg.enrolled_count} ${bg.enrolled_count === 1 ? 'Student' : 'Students'})`;
+                      return (
+                        <option key={bg.batch_id} value={bg.batch_id}>
+                          {label}
+                        </option>
+                      );
+                    })
+                  )}
                 </select>
                 {activeBatch?.start_date && activeBatch?.end_date && (
                   <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
