@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     META_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
     META_WHATSAPP_API_VERSION: str = "v21.0"
     META_WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = "ycc_meta_webhook_secret_verify_token_2026"
+    META_WHATSAPP_DEFAULT_LANGUAGE: str = "mr"
 
     # Brevo - Transactional Email
     BREVO_EMAIL_ENABLED: bool = False

@@ -65,15 +65,18 @@ class MetaWhatsAppClient:
         to_phone: str,
         template_name: str,
         components: List[Dict[str, Any]],
-        language_code: str = "en_US"
+        language_code: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Sends an approved Meta WhatsApp Template Message.
+        Defaults to Marathi ('mr'), falling back to 'en_US' if not yet approved.
         If credentials are absent or disabled, logs message cleanly in Mock Sandbox mode.
         """
         normalized_to = normalize_phone_number(to_phone)
         if not normalized_to:
             raise ValueError(f"Invalid phone number provided: '{to_phone}'")
+
+        target_lang = language_code or getattr(settings, "META_WHATSAPP_DEFAULT_LANGUAGE", "mr") or "mr"
 
         payload = {
             "messaging_product": "whatsapp",
@@ -82,7 +85,7 @@ class MetaWhatsAppClient:
             "type": "template",
             "template": {
                 "name": template_name,
-                "language": {"code": language_code},
+                "language": {"code": target_lang},
                 "components": components
             }
         }
@@ -93,7 +96,7 @@ class MetaWhatsAppClient:
             logger.info(
                 f"\n[META WHATSAPP MOCK SANDBOX DISPATCH]\n"
                 f"  To: +{normalized_to} (Raw: {to_phone})\n"
-                f"  Template: {template_name} ({language_code})\n"
+                f"  Template: {template_name} ({target_lang})\n"
                 f"  Components: {components}\n"
                 f"  Generated Mock ID: {mock_wamid}\n"
             )
@@ -102,6 +105,7 @@ class MetaWhatsAppClient:
                 "message_id": mock_wamid,
                 "recipient": normalized_to,
                 "template": template_name,
+                "language": target_lang,
                 "is_mock": True
             }
 
@@ -111,12 +115,29 @@ class MetaWhatsAppClient:
             "Content-Type": "application/json"
         }
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 response = await client.post(self.base_url, headers=headers, json=payload)
                 resp_json = response.json()
                 if response.status_code >= 400:
                     error_detail = resp_json.get("error", {}).get("message", response.text)
+                    # If failed because language translation is still pending/not found, retry with 'en_US'
+                    if target_lang != "en_US" and ("template" in error_detail.lower() or "language" in error_detail.lower() or "does not exist" in error_detail.lower()):
+                        logger.warning(
+                            f"Meta template '{template_name}' in '{target_lang}' returned ({error_detail}). Falling back to 'en_US'."
+                        )
+                        payload["template"]["language"]["code"] = "en_US"
+                        fallback_resp = await client.post(self.base_url, headers=headers, json=payload)
+                        if fallback_resp.status_code < 400:
+                            fb_json = fallback_resp.json()
+                            return {
+                                "status": "SENT",
+                                "message_id": fb_json.get("messages", [{}])[0].get("id", "wamid_unknown"),
+                                "recipient": normalized_to,
+                                "template": template_name,
+                                "language": "en_US",
+                                "is_mock": False
+                            }
                     logger.error(f"Meta WhatsApp API error ({response.status_code}): {error_detail}")
                     raise RuntimeError(f"Meta WhatsApp API returned HTTP {response.status_code}: {error_detail}")
 
@@ -126,6 +147,7 @@ class MetaWhatsAppClient:
                     "message_id": message_id,
                     "recipient": normalized_to,
                     "template": template_name,
+                    "language": target_lang,
                     "is_mock": False
                 }
             except httpx.RequestError as exc:
