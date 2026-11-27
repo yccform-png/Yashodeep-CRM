@@ -163,6 +163,7 @@ interface BatchSyncPreviewResponse {
 interface BatchItem {
   id: string;
   course_id: string;
+  academic_year_id?: string;
   course_name?: string;
   course_code?: string;
   name: string;
@@ -476,7 +477,7 @@ export const AcademicConfig: React.FC = () => {
   };
 
   const openCreateBatch = (preselectedCourseId?: string) => {
-    const curAy = academicYears.find((y: any) => y.is_current) || academicYears[0];
+    const curAy = selectedAcademicYear || academicYears.find((y: any) => y.is_current) || academicYears[0];
     const targetCourse = typeof preselectedCourseId === 'string' && preselectedCourseId
       ? courses.find((c) => c.id === preselectedCourseId)
       : null;
@@ -487,7 +488,7 @@ export const AcademicConfig: React.FC = () => {
 
     if (targetCourse) {
       const existingDivs = batches
-        .filter((b) => b.course_id === targetCourse.id)
+        .filter((b) => b.course_id === targetCourse.id && (!curAy || b.academic_year_id === curAy.id))
         .map((b) => (b.division || 'A').toUpperCase());
       const charCodes = existingDivs.map((d) => d.charCodeAt(0)).filter((c) => c >= 65 && c <= 90);
       const maxChar = charCodes.length > 0 ? Math.max(...charCodes) : 64;
@@ -505,7 +506,7 @@ export const AcademicConfig: React.FC = () => {
       division: nextDiv,
       max_capacity: 50,
       start_date: curAy?.start_date || '2026-06-01',
-      end_date: curAy?.end_date || '2027-04-30'
+      end_date: curAy?.end_date || '2027-05-31'
     });
     setShowAddBatch(true);
   };
@@ -724,13 +725,15 @@ export const AcademicConfig: React.FC = () => {
       return;
     }
     try {
-      const curAy = academicYears.find((y: any) => y.id === batchForm.academic_year_id) ||
-                    academicYears.find((y: any) => y.is_current) ||
-                    academicYears[0];
+      const targetAyId = batchForm.academic_year_id ||
+                         selectedAcademicYear?.id ||
+                         academicYears.find((y: any) => y.id === batchForm.academic_year_id)?.id ||
+                         academicYears.find((y: any) => y.is_current)?.id ||
+                         academicYears[0]?.id;
 
       await apiClient.post('/academics/batches', {
         ...batchForm,
-        academic_year_id: curAy?.id
+        academic_year_id: targetAyId
       });
       setFeedback({ type: 'success', text: `Batch ${batchForm.name} established!` });
       setShowAddBatch(false);
@@ -2123,6 +2126,32 @@ export const AcademicConfig: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateBatch} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Academic Year / Session *</label>
+                <select
+                  required
+                  value={batchForm.academic_year_id}
+                  onChange={(e) => {
+                    const newAyId = e.target.value;
+                    const selectedAy = academicYears.find((y: any) => y.id === newAyId);
+                    setBatchForm({
+                      ...batchForm,
+                      academic_year_id: newAyId,
+                      start_date: selectedAy?.start_date || batchForm.start_date,
+                      end_date: selectedAy?.end_date || batchForm.end_date
+                    });
+                  }}
+                  className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Choose Academic Year --</option>
+                  {academicYears.map((ay: any) => (
+                    <option key={ay.id} value={ay.id}>
+                      {ay.name} {ay.is_current ? '(Current Session)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Associated Course *</label>
                 <select
