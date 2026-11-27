@@ -133,6 +133,68 @@ class NotificationDispatcher:
 
         return parent_name, parent_phone, parent_email
 
+    def _resolve_whatsapp_recipients(self, stu: Student) -> List[Dict[str, str]]:
+        """
+        Extracts WhatsApp recipients, routing language by audience role:
+        - Parent / Guardian -> Marathi ('mr')
+        - Student -> English ('en_US')
+        Avoids duplicate messages if student and parent share the same phone number.
+        """
+        recipients = []
+        guardians = getattr(stu, "guardians", []) or []
+        sg = (
+            next((g for g in guardians if getattr(g, "receives_notifications", False)), None)
+            or next((g for g in guardians if getattr(g, "is_primary", False)), None)
+            or (guardians[0] if guardians else None)
+        )
+        guardian_obj = getattr(sg, "guardian", None) if sg else None
+
+        parent_name = "Parent / Guardian"
+        guardian_phone = None
+        if guardian_obj and getattr(guardian_obj, "mobile", None):
+            guardian_phone = guardian_obj.mobile.strip()
+            fname = getattr(guardian_obj, "first_name", "") or ""
+            lname = getattr(guardian_obj, "last_name", "") or ""
+            full = f"{fname} {lname}".strip()
+            if full:
+                parent_name = full
+        elif sg and hasattr(sg, "mobile") and getattr(sg, "mobile", None):
+            guardian_phone = sg.mobile.strip()
+            fname = getattr(sg, "first_name", "") or ""
+            lname = getattr(sg, "last_name", "") or ""
+            full = f"{fname} {lname}".strip()
+            if full:
+                parent_name = full
+
+        student_name = f"{getattr(stu, 'first_name', '')} {getattr(stu, 'last_name', '')}".strip()
+        student_phone = getattr(stu, "mobile", None)
+        student_phone = student_phone.strip() if student_phone else None
+
+        if guardian_phone:
+            recipients.append({
+                "phone": guardian_phone,
+                "language": "mr",
+                "name": parent_name,
+                "role": "PARENT"
+            })
+
+        if student_phone and student_phone != guardian_phone:
+            recipients.append({
+                "phone": student_phone,
+                "language": "en_US",
+                "name": student_name,
+                "role": "STUDENT"
+            })
+        elif not guardian_phone and student_phone:
+            recipients.append({
+                "phone": student_phone,
+                "language": "mr" if guardians else "en_US",
+                "name": parent_name if guardians else student_name,
+                "role": "PARENT" if guardians else "STUDENT"
+            })
+
+        return recipients
+
     # -------------------------------------------------------------------------
     # 1. ATTENDANCE ABSENT ALERTS
     # -------------------------------------------------------------------------
@@ -184,16 +246,11 @@ class NotificationDispatcher:
                     student_name = f"{stu.first_name} {stu.last_name}".strip()
                     parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
-                    # 1. WhatsApp Alert
-                    phones_to_send = []
-                    if parent_phone:
-                        phones_to_send.append(parent_phone)
-                    if stu.mobile and stu.mobile != parent_phone:
-                        phones_to_send.append(stu.mobile)
-
-                    for target_phone in phones_to_send:
+                    # 1. WhatsApp Alert (Parent in Marathi, Student in English if distinct)
+                    recipients = self._resolve_whatsapp_recipients(stu)
+                    for rc in recipients:
                         wa_template = format_attendance_absent_whatsapp(
-                            parent_name=parent_name,
+                            parent_name=rc["name"],
                             student_name=student_name,
                             subject_name=subject_name,
                             class_name=class_name,
@@ -202,22 +259,23 @@ class NotificationDispatcher:
                         outbox = await self._log_outbox(
                             db,
                             event_type="ATTENDANCE_ABSENT",
-                            recipient_target=target_phone,
+                            recipient_target=rc["phone"],
                             channel="WHATSAPP",
-                            payload=wa_template
+                            payload={**wa_template, "language": rc["language"], "role": rc["role"]}
                         )
                         try:
                             res = await meta_whatsapp_client.send_template_message(
-                                to_phone=target_phone,
+                                to_phone=rc["phone"],
                                 template_name=wa_template["template_name"],
-                                components=wa_template["components"]
+                                components=wa_template["components"],
+                                language_code=rc["language"]
                             )
                             if res.get("is_mock"):
                                 await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
                             else:
                                 await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
-                            logger.error(f"Failed to dispatch absence WhatsApp to {target_phone}: {exc}")
+                            logger.error(f"Failed to dispatch absence WhatsApp to {rc['phone']}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                     # 2. Email Alert (if email on record for guardian or student)
@@ -310,16 +368,11 @@ class NotificationDispatcher:
 
                 payment_method = getattr(pay, "payment_method", "ONLINE")
 
-                # 1. WhatsApp Receipt
-                phones_to_send = []
-                if parent_phone:
-                    phones_to_send.append(parent_phone)
-                if stu.mobile and stu.mobile != parent_phone:
-                    phones_to_send.append(stu.mobile)
-
-                for target_phone in phones_to_send:
+                # 1. WhatsApp Receipt (Parent in Marathi, Student in English if distinct)
+                recipients = self._resolve_whatsapp_recipients(stu)
+                for rc in recipients:
                     wa_payload = format_payment_receipt_whatsapp(
-                        parent_name=parent_name,
+                        parent_name=rc["name"],
                         amount=float(pay.amount),
                         student_name=student_name,
                         invoice_number=inv_number,
@@ -329,22 +382,23 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="PAYMENT_RECEIPT",
-                        recipient_target=target_phone,
+                        recipient_target=rc["phone"],
                         channel="WHATSAPP",
-                        payload=wa_payload
+                        payload={**wa_payload, "language": rc["language"], "role": rc["role"]}
                     )
                     try:
                         res = await meta_whatsapp_client.send_template_message(
-                            to_phone=target_phone,
+                            to_phone=rc["phone"],
                             template_name=wa_payload["template_name"],
-                            components=wa_payload["components"]
+                            components=wa_payload["components"],
+                            language_code=rc["language"]
                         )
                         if res.get("is_mock"):
                             await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
                         else:
                             await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch payment WhatsApp to {target_phone}: {exc}")
+                        logger.error(f"Failed to dispatch payment WhatsApp to {rc['phone']}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                 # 2. Email Receipt (both parent and student if emails on record)
@@ -433,10 +487,11 @@ class NotificationDispatcher:
                 due_date_str = str(target_inst.due_date)
                 unpaid_amount = float(target_inst.amount - (target_inst.paid_amount or 0))
 
-                # 1. Dispatch WhatsApp (to parent mobile)
-                if parent_phone:
+                # 1. Dispatch WhatsApp (Parent in Marathi, Student in English if distinct)
+                recipients = self._resolve_whatsapp_recipients(stu)
+                for rc in recipients:
                     wa_payload = format_fee_reminder_whatsapp(
-                        parent_name=parent_name,
+                        parent_name=rc["name"],
                         installment_number=target_inst.installment_number,
                         amount=unpaid_amount,
                         student_name=student_name,
@@ -445,22 +500,23 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="FEE_DUE_REMINDER",
-                        recipient_target=parent_phone,
+                        recipient_target=rc["phone"],
                         channel="WHATSAPP",
-                        payload={**wa_payload, "installment_id": str(target_inst.id), "invoice_id": str(inv.id)}
+                        payload={**wa_payload, "installment_id": str(target_inst.id), "invoice_id": str(inv.id), "language": rc["language"], "role": rc["role"]}
                     )
                     try:
                         res = await meta_whatsapp_client.send_template_message(
-                            to_phone=parent_phone,
+                            to_phone=rc["phone"],
                             template_name=wa_payload["template_name"],
-                            components=wa_payload["components"]
+                            components=wa_payload["components"],
+                            language_code=rc["language"]
                         )
                         if res.get("is_mock"):
                             await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
                         else:
                             await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch fee reminder WhatsApp to {parent_phone}: {exc}")
+                        logger.error(f"Failed to dispatch fee reminder WhatsApp to {rc['phone']}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                 # 2. Dispatch Email (to parent and student)
@@ -640,10 +696,11 @@ class NotificationDispatcher:
                     grade = r.grade or ("A+" if percentage >= 90 else ("A" if percentage >= 80 else ("B+" if percentage >= 70 else ("B" if percentage >= 60 else "C"))))
                     is_pass = bool(r.is_pass) if r.is_pass is not None else (percentage >= 35.0)
 
-                    # 1. WhatsApp Dispatch (to parent mobile)
-                    if parent_phone:
+                    # 1. WhatsApp Dispatch (Parent in Marathi, Student in English if distinct)
+                    recipients = self._resolve_whatsapp_recipients(stu)
+                    for rc in recipients:
                         wa_payload = format_exam_result_whatsapp(
-                            parent_name=parent_name,
+                            parent_name=rc["name"],
                             exam_name=exam_name,
                             subject_name=subject_name,
                             student_name=student_name,
@@ -654,22 +711,23 @@ class NotificationDispatcher:
                         outbox = await self._log_outbox(
                             db,
                             event_type="EXAM_RESULT_PUBLISHED",
-                            recipient_target=parent_phone,
+                            recipient_target=rc["phone"],
                             channel="WHATSAPP",
-                            payload={**wa_payload, "exam_id": str(exam.id), "student_id": str(stu.id)}
+                            payload={**wa_payload, "exam_id": str(exam.id), "student_id": str(stu.id), "language": rc["language"], "role": rc["role"]}
                         )
                         try:
                             res = await meta_whatsapp_client.send_template_message(
-                                to_phone=parent_phone,
+                                to_phone=rc["phone"],
                                 template_name=wa_payload["template_name"],
-                                components=wa_payload["components"]
+                                components=wa_payload["components"],
+                                language_code=rc["language"]
                             )
                             if res.get("is_mock"):
                                 await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
                             else:
                                 await self._update_outbox_result(db, outbox.id, "SENT")
                         except Exception as exc:
-                            logger.error(f"Failed to dispatch exam result WhatsApp to {parent_phone}: {exc}")
+                            logger.error(f"Failed to dispatch exam result WhatsApp to {rc['phone']}: {exc}")
                             await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                     # 2. Email Dispatch (to parent and student)
@@ -755,14 +813,9 @@ class NotificationDispatcher:
 
                 parent_name, parent_phone, parent_email = self._resolve_contact(stu)
 
-                # 1. WhatsApp Welcome
-                phones_to_send = []
-                if parent_phone:
-                    phones_to_send.append(parent_phone)
-                if stu.mobile and stu.mobile != parent_phone:
-                    phones_to_send.append(stu.mobile)
-
-                for target_phone in phones_to_send:
+                # 1. WhatsApp Welcome (Parent in Marathi, Student in English if distinct)
+                recipients = self._resolve_whatsapp_recipients(stu)
+                for rc in recipients:
                     wa_payload = format_admission_welcome_whatsapp(
                         student_name=student_name,
                         course_name=course_name,
@@ -771,22 +824,23 @@ class NotificationDispatcher:
                     outbox = await self._log_outbox(
                         db,
                         event_type="ADMISSION_CONFIRMED",
-                        recipient_target=target_phone,
+                        recipient_target=rc["phone"],
                         channel="WHATSAPP",
-                        payload=wa_payload
+                        payload={**wa_payload, "language": rc["language"], "role": rc["role"]}
                     )
                     try:
                         res = await meta_whatsapp_client.send_template_message(
-                            to_phone=target_phone,
+                            to_phone=rc["phone"],
                             template_name=wa_payload["template_name"],
-                            components=wa_payload["components"]
+                            components=wa_payload["components"],
+                            language_code=rc["language"]
                         )
                         if res.get("is_mock"):
                             await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
                         else:
                             await self._update_outbox_result(db, outbox.id, "SENT")
                     except Exception as exc:
-                        logger.error(f"Failed to dispatch welcome WhatsApp to {target_phone}: {exc}")
+                        logger.error(f"Failed to dispatch welcome WhatsApp to {rc['phone']}: {exc}")
                         await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                 # 2. Email Welcome
@@ -929,37 +983,39 @@ class NotificationDispatcher:
                 student_full_name = f"{student.first_name} {student.last_name}".strip()
                 prn = student.prn or student.student_code
 
-                # A. Meta WhatsApp Dispatch
-                if target_phone and meta_whatsapp_client.is_configured:
-                    wa_payload = format_promotion_confirmation_whatsapp(
-                        parent_name=parent_name,
-                        student_name=student_full_name,
-                        promoted_class_name=new_class_name,
-                        academic_year_name=ay_name,
-                        invoice_number=inv_number,
-                        total_amount=f"₹{inv_total}"
-                    )
-                    outbox = await self._record_outbox(
-                        db,
-                        recipient_type="PARENT",
-                        recipient_id=student.id,
-                        recipient_target=target_phone,
-                        channel="WHATSAPP",
-                        payload=wa_payload
-                    )
-                    try:
-                        res = await meta_whatsapp_client.send_template_message(
-                            to_phone=target_phone,
-                            template_name=wa_payload["template_name"],
-                            components=wa_payload["components"]
+                # A. Meta WhatsApp Dispatch (Parent in Marathi, Student in English if distinct)
+                if meta_whatsapp_client.is_configured:
+                    recipients = self._resolve_whatsapp_recipients(student)
+                    for rc in recipients:
+                        wa_payload = format_promotion_confirmation_whatsapp(
+                            parent_name=rc["name"],
+                            student_name=student_full_name,
+                            promoted_class_name=new_class_name,
+                            academic_year_name=ay_name,
+                            invoice_number=inv_number,
+                            total_amount=f"₹{inv_total}"
                         )
-                        if res.get("is_mock"):
-                            await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
-                        else:
-                            await self._update_outbox_result(db, outbox.id, "SENT")
-                    except Exception as exc:
-                        logger.error(f"Failed to dispatch promotion WhatsApp to {target_phone}: {exc}")
-                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+                        outbox = await self._log_outbox(
+                            db,
+                            event_type="PROMOTION_CONFIRMED",
+                            recipient_target=rc["phone"],
+                            channel="WHATSAPP",
+                            payload={**wa_payload, "language": rc["language"], "role": rc["role"]}
+                        )
+                        try:
+                            res = await meta_whatsapp_client.send_template_message(
+                                to_phone=rc["phone"],
+                                template_name=wa_payload["template_name"],
+                                components=wa_payload["components"],
+                                language_code=rc["language"]
+                            )
+                            if res.get("is_mock"):
+                                await self._update_outbox_result(db, outbox.id, "NOT_CONFIGURED", "Meta WhatsApp API is not configured in .env. Use 1-Click WhatsApp links to send directly.")
+                            else:
+                                await self._update_outbox_result(db, outbox.id, "SENT")
+                        except Exception as exc:
+                            logger.error(f"Failed to dispatch promotion WhatsApp to {rc['phone']}: {exc}")
+                            await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
 
                 # B. Brevo Email Dispatch
                 if target_email and brevo_email_client.is_configured:
@@ -974,10 +1030,9 @@ class NotificationDispatcher:
                         total_amount=inv_total,
                         installments=installments_data
                     )
-                    outbox = await self._record_outbox(
+                    outbox = await self._log_outbox(
                         db,
-                        recipient_type="PARENT",
-                        recipient_id=student.id,
+                        event_type="PROMOTION_CONFIRMED",
                         recipient_target=target_email,
                         channel="EMAIL",
                         payload={"subject": email_payload["subject"]}
