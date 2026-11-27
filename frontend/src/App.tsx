@@ -10,6 +10,7 @@ import { StudentsList } from './pages/StudentsList';
 import { StudentProfile } from './pages/StudentProfile';
 import { AcademicConfig } from './pages/AcademicConfig';
 import { FeesManagement } from './pages/FeesManagement';
+import { FinanceAnalytics } from './pages/FinanceAnalytics';
 import { StudyRoomVisualizer } from './pages/StudyRoomVisualizer';
 import { HostelManagement } from './pages/HostelManagement';
 import { AttendanceMarking } from './pages/AttendanceMarking';
@@ -123,6 +124,15 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
                 <FeesManagement />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="finance-analytics"
+            element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                <FinanceAnalytics />
               </ProtectedRoute>
             }
           />

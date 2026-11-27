@@ -19,7 +19,8 @@ import {
   Landmark,
   X,
   CreditCard,
-  User
+  User,
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useInstitute } from '../../context/InstituteContext';
@@ -49,6 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     { name: 'New Admission', path: '/admissions', icon: UserPlus, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Students Registry', path: '/students', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Dynamic Fee Engine', path: '/fees', icon: DollarSign, roles: ['SUPER_ADMIN'] },
+    { name: 'Finance & Analytics', path: '/finance-analytics', icon: TrendingUp, roles: ['SUPER_ADMIN'] },
     { name: 'Facility Plans & Pricing', path: '/facility-plans', icon: Tag, roles: ['SUPER_ADMIN'] },
     { name: 'Attendance', path: '/attendance', icon: CalendarCheck, roles: ['SUPER_ADMIN', 'ADMIN'] },
     { name: 'Academics & Batches', path: '/academics', icon: GraduationCap, roles: ['SUPER_ADMIN', 'ADMIN'] },
