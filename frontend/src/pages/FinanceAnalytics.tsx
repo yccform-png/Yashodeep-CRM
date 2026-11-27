@@ -21,10 +21,14 @@ import {
   Phone,
   MessageSquare,
   ShieldAlert,
+  ShieldCheck,
   BarChart3,
   PieChart,
   RefreshCw,
-  Download
+  Download,
+  CalendarDays,
+  Percent,
+  CheckCheck
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAcademicYear } from '../context/AcademicYearContext';
@@ -138,6 +142,7 @@ interface DefaulterItem {
   paid_amount: number;
   pending_amount: number;
   days_overdue: number;
+  days_until_due?: number;
   is_overdue: boolean;
 }
 
@@ -191,7 +196,7 @@ export const FinanceAnalytics: React.FC = () => {
   const [loadingBatchStudents, setLoadingBatchStudents] = useState<boolean>(false);
 
   // Defaulter Aging Filter Bucket
-  const [activeAgingBucket, setActiveAgingBucket] = useState<'ALL' | '1_30' | '31_60' | '61_90' | '90_plus' | 'upcoming'>('ALL');
+  const [activeAgingBucket, setActiveAgingBucket] = useState<'ALL' | 'upcoming' | '1_30' | '31_60' | '61_90' | '90_plus'>('ALL');
 
   // Fetch all analytics data
   const fetchFinanceData = async () => {
@@ -319,10 +324,17 @@ export const FinanceAnalytics: React.FC = () => {
     return defaulters.buckets[activeAgingBucket] || [];
   };
 
+  // Batchwise Totals
+  const totalBilledBatches = filteredBatches.reduce((acc, b) => acc + b.total_invoiced, 0);
+  const totalCollectedBatches = filteredBatches.reduce((acc, b) => acc + b.total_collected, 0);
+  const totalBalanceBatches = filteredBatches.reduce((acc, b) => acc + b.total_outstanding, 0);
+  const totalEnrolledBatches = filteredBatches.reduce((acc, b) => acc + b.enrolled_count, 0);
+  const avgRecoveryBatches = totalBilledBatches > 0 ? ((totalCollectedBatches / totalBilledBatches) * 100).toFixed(1) : '0.0';
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="space-y-6 w-full pb-12 animate-in fade-in duration-200">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm w-full">
         <div>
           <div className="flex items-center space-x-2.5">
             <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-600/20">
@@ -378,7 +390,7 @@ export const FinanceAnalytics: React.FC = () => {
       </div>
 
       {/* High-Level Executive KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
         {/* Gross Invoiced */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
@@ -459,64 +471,76 @@ export const FinanceAnalytics: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Tab Navigation */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 bg-white px-4 rounded-2xl shadow-sm">
-        <button
-          type="button"
-          onClick={() => setActiveTab('BATCHES')}
-          className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer ${
-            activeTab === 'BATCHES'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Batchwise Collections ({batches.length})</span>
-        </button>
+      {/* Main Tab Navigation with Right Status Chips */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 bg-white px-4 rounded-2xl shadow-sm gap-2">
+        <div className="flex items-center space-x-2 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('BATCHES')}
+            className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'BATCHES'
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Batchwise Collections ({batches.length})</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('STREAMS')}
-          className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer ${
-            activeTab === 'STREAMS'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <PieChart className="w-4 h-4" />
-          <span>Revenue Streams &amp; Payment Modes</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('STREAMS')}
+            className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'STREAMS'
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <PieChart className="w-4 h-4" />
+            <span>Revenue Streams &amp; Payment Modes</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('DEFAULTERS')}
-          className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer ${
-            activeTab === 'DEFAULTERS'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <ShieldAlert className="w-4 h-4" />
-          <span>Defaulters Aging Radar ({defaulters?.summary.total_overdue_count || 0})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('DEFAULTERS')}
+            className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'DEFAULTERS'
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>Defaulters &amp; Cashflow Pipeline ({defaulters?.summary.total_overdue_count || 0})</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('MULTI_YEAR')}
-          className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer ${
-            activeTab === 'MULTI_YEAR'
-              ? 'border-emerald-600 text-emerald-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4" />
-          <span>Multi-Year Comparison &amp; YoY Growth</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('MULTI_YEAR')}
+            className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'MULTI_YEAR'
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Multi-Year Comparison &amp; YoY Growth</span>
+          </button>
+        </div>
+
+        {/* Right Status Indicator */}
+        <div className="hidden lg:flex items-center space-x-2 py-2">
+          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+            {overview?.recovery_rate || 0}% Realized
+          </span>
+          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+            Balance Due: ₹{(overview?.total_outstanding || 0).toLocaleString('en-IN')}
+          </span>
+        </div>
       </div>
 
       {/* TAB 1: BATCHWISE COLLECTIONS TABLE */}
       {activeTab === 'BATCHES' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5 w-full">
           {/* Controls & Filter Bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 min-w-[260px]">
@@ -561,7 +585,7 @@ export const FinanceAnalytics: React.FC = () => {
           </div>
 
           {/* Batches Table */}
-          <div className="border border-slate-200 rounded-xl overflow-x-auto">
+          <div className="border border-slate-200 rounded-xl overflow-x-auto w-full">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                 <tr>
@@ -645,6 +669,32 @@ export const FinanceAnalytics: React.FC = () => {
                   ))
                 )}
               </tbody>
+              {/* Summary Totals Row */}
+              {filteredBatches.length > 0 && (
+                <tfoot className="bg-slate-100/80 border-t-2 border-slate-300 font-bold text-xs text-slate-900">
+                  <tr>
+                    <td className="py-3 px-4 font-black" colSpan={3}>
+                      Total Across {filteredBatches.length} Displayed Batches
+                    </td>
+                    <td className="py-3 px-3 text-center font-black">
+                      {totalEnrolledBatches}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-black">
+                      ₹{totalBilledBatches.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-black text-emerald-700">
+                      ₹{totalCollectedBatches.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-black text-amber-700">
+                      ₹{totalBalanceBatches.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                    </td>
+                    <td className="py-3 px-4 text-center font-mono font-black">
+                      {avgRecoveryBatches}%
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -652,16 +702,16 @@ export const FinanceAnalytics: React.FC = () => {
 
       {/* TAB 2: REVENUE STREAMS & PAYMENT MODES */}
       {activeTab === 'STREAMS' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 w-full">
           {/* Revenue Component Distribution */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center space-x-2">
                 <PieChart className="w-5 h-5 text-emerald-600" />
-                <h3 className="text-sm font-bold text-slate-900">Revenue Component Breakdown</h3>
+                <h3 className="text-sm font-bold text-slate-900">Revenue Components</h3>
               </div>
               <span className="text-xs font-mono font-bold text-slate-500">
-                Gross: ₹{(overview?.gross_invoiced || 0).toLocaleString('en-IN')}
+                ₹{(overview?.gross_invoiced || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
@@ -690,150 +740,319 @@ export const FinanceAnalytics: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center space-x-2">
                 <CreditCard className="w-5 h-5 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">Payment Modes Realization</h3>
+                <h3 className="text-sm font-bold text-slate-900">Payment Modes</h3>
               </div>
               <span className="text-xs font-mono font-bold text-emerald-700">
-                Collected: ₹{(overview?.total_collected || 0).toLocaleString('en-IN')}
+                ₹{(overview?.total_collected || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
             <div className="space-y-3.5">
-              {overview?.payment_methods.map((pm) => (
-                <div key={pm.method} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs font-medium">
-                    <span className="text-slate-800 font-bold uppercase tracking-wider">{pm.method.replace('_', ' ')}</span>
-                    <span className="font-mono text-slate-700">
-                      ₹{pm.amount.toLocaleString('en-IN')} • {pm.count} txns ({pm.percentage}%)
-                    </span>
+              {overview?.payment_methods && overview.payment_methods.length > 0 ? (
+                overview.payment_methods.map((pm) => (
+                  <div key={pm.method} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs font-medium">
+                      <span className="text-slate-800 font-bold uppercase tracking-wider">{pm.method.replace('_', ' ')}</span>
+                      <span className="font-mono text-slate-700">
+                        ₹{pm.amount.toLocaleString('en-IN')} • {pm.count} txns ({pm.percentage}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(100, pm.percentage)}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className="bg-blue-600 h-full rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, pm.percentage)}%` }}
-                    ></div>
-                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  No payment transactions logged in this session yet.
                 </div>
-              ))}
+              )}
+            </div>
+          </div>
+
+          {/* Realization & Recovery Breakdown */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-sm font-bold text-slate-900">Billing Recovery Matrix</h3>
+              </div>
+              <span className="text-xs font-mono font-bold text-slate-700">
+                {overview?.invoices_count.total || 0} Invoices
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-emerald-900 block">Fully Paid Invoices</span>
+                  <span className="text-[11px] text-emerald-700">Zero arrears remaining</span>
+                </div>
+                <span className="text-lg font-black font-mono text-emerald-800">
+                  {overview?.invoices_count.paid || 0}
+                </span>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-blue-900 block">Partially Paid Invoices</span>
+                  <span className="text-[11px] text-blue-700">Installments ongoing</span>
+                </div>
+                <span className="text-lg font-black font-mono text-blue-800">
+                  {overview?.invoices_count.partial || 0}
+                </span>
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-amber-900 block">Unpaid / Issued Invoices</span>
+                  <span className="text-[11px] text-amber-700">Full amount pending</span>
+                </div>
+                <span className="text-lg font-black font-mono text-amber-800">
+                  {overview?.invoices_count.unpaid || 0}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 3: DEFAULTERS AGING RADAR */}
+      {/* TAB 3: DEFAULTERS & UPCOMING PIPELINE */}
       {activeTab === 'DEFAULTERS' && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Delinquency &amp; Overdue Aging Analysis</h3>
-              <p className="text-xs text-slate-500">Track students with overdue installments grouped by age buckets.</p>
-            </div>
-            <div className="text-xs font-mono font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200">
-              Total Overdue: ₹{(defaulters?.summary.total_overdue_amount || 0).toLocaleString('en-IN')}
-            </div>
-          </div>
-
-          {/* Aging Buckets Selector */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-            {[
-              { key: 'ALL', label: 'All Overdue', count: defaulters?.summary.total_overdue_count, total: defaulters?.summary.total_overdue_amount, color: 'border-slate-800 text-slate-900' },
-              { key: '1_30', label: '1–30 Days', count: defaulters?.summary.b1_30_count, total: defaulters?.summary.b1_30_total, color: 'border-amber-500 text-amber-700' },
-              { key: '31_60', label: '31–60 Days', count: defaulters?.summary.b31_60_count, total: defaulters?.summary.b31_60_total, color: 'border-orange-500 text-orange-700' },
-              { key: '61_90', label: '61–90 Days', count: defaulters?.summary.b61_90_count, total: defaulters?.summary.b61_90_total, color: 'border-rose-500 text-rose-700' },
-              { key: '90_plus', label: '90+ Days Critical', count: defaulters?.summary.b90_plus_count, total: defaulters?.summary.b90_plus_total, color: 'border-red-600 text-red-700' }
-            ].map((b) => (
-              <button
-                key={b.key}
-                type="button"
-                onClick={() => setActiveAgingBucket(b.key as any)}
-                className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                  activeAgingBucket === b.key
-                    ? 'bg-slate-50 ring-2 ring-emerald-500 shadow-xs'
-                    : 'bg-white hover:bg-slate-50'
-                }`}
-              >
-                <span className="text-[11px] font-bold text-slate-500 block">{b.label}</span>
-                <span className="font-mono text-sm font-black block mt-1 text-slate-900">
-                  ₹{(b.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+        <div className="space-y-5 w-full">
+          {/* Delinquency & Aging Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5 w-full">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Installments &amp; Delinquency Aging Radar</h3>
+                <p className="text-xs text-slate-500">
+                  Overdue delinquent installments categorized by age, alongside upcoming scheduled cash inflows.
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-mono font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200">
+                  Total Overdue: ₹{(defaulters?.summary.total_overdue_amount || 0).toLocaleString('en-IN')}
                 </span>
-                <span className="text-[10px] text-slate-400 block font-medium">{b.count || 0} students</span>
-              </button>
-            ))}
+                <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                  Upcoming Pipeline: ₹{(defaulters?.summary.upcoming_total || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Aging & Pipeline Selector Tabs (6 Buckets) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              {[
+                { key: 'ALL', label: 'All Overdue', count: defaulters?.summary.total_overdue_count, total: defaulters?.summary.total_overdue_amount, badge: 'Overdue' },
+                { key: 'upcoming', label: 'Upcoming Pipeline', count: defaulters?.summary.upcoming_count, total: defaulters?.summary.upcoming_total, badge: 'Scheduled' },
+                { key: '1_30', label: '1–30 Days', count: defaulters?.summary.b1_30_count, total: defaulters?.summary.b1_30_total, badge: 'Mild' },
+                { key: '31_60', label: '31–60 Days', count: defaulters?.summary.b31_60_count, total: defaulters?.summary.b31_60_total, badge: 'Moderate' },
+                { key: '61_90', label: '61–90 Days', count: defaulters?.summary.b61_90_count, total: defaulters?.summary.b61_90_total, badge: 'High' },
+                { key: '90_plus', label: '90+ Days Critical', count: defaulters?.summary.b90_plus_count, total: defaulters?.summary.b90_plus_total, badge: 'Severe' }
+              ].map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() => setActiveAgingBucket(b.key as any)}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                    activeAgingBucket === b.key
+                      ? 'bg-slate-50 ring-2 ring-emerald-500 shadow-xs'
+                      : 'bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 block truncate">{b.label}</span>
+                  </div>
+                  <span className="font-mono text-sm font-black block mt-1 text-slate-900 truncate">
+                    ₹{(b.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block font-medium mt-0.5">
+                    {b.count || 0} installment(s)
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Overdue Delinquents Table (shown when activeAgingBucket is an overdue filter or ALL with > 0 overdue) */}
+            {activeAgingBucket !== 'upcoming' && (defaulters?.summary.total_overdue_count || 0) > 0 && (
+              <div className="border border-slate-200 rounded-xl overflow-x-auto w-full">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-rose-50/70 border-b border-rose-200 font-bold text-rose-900">
+                    <tr>
+                      <th className="py-2.5 px-4">Overdue Student &amp; Code</th>
+                      <th className="py-2.5 px-3">Batch / Division</th>
+                      <th className="py-2.5 px-3">Parent / Guardian Phone</th>
+                      <th className="py-2.5 px-3 text-center">Invoice #</th>
+                      <th className="py-2.5 px-3 text-center">Inst #</th>
+                      <th className="py-2.5 px-3 text-center">Due Date</th>
+                      <th className="py-2.5 px-4 text-right">Overdue Amount</th>
+                      <th className="py-2.5 px-3 text-center">Days Overdue</th>
+                      <th className="py-2.5 px-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {getFilteredDefaulters().map((item) => (
+                      <tr key={item.installment_id} className="hover:bg-rose-50/40 transition">
+                        <td className="py-3 px-4 font-medium text-slate-900">
+                          <span className="font-bold block">{item.student_name}</span>
+                          <span className="font-mono text-[10px] text-slate-500">{item.student_code}</span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-700">{item.batch_name}</td>
+                        <td className="py-3 px-3 font-mono text-slate-700">
+                          <span>{item.guardian_name}</span>
+                          <span className="text-slate-500 block text-[11px]">{item.guardian_mobile}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-blue-700">
+                          {item.invoice_number}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold">#{item.installment_number}</td>
+                        <td className="py-3 px-3 text-center font-mono text-slate-600">{item.due_date}</td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-rose-700">
+                          ₹{item.pending_amount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded font-bold font-mono text-[10px] bg-rose-50 text-rose-700 border border-rose-200">
+                            {item.days_overdue} days
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          {item.guardian_mobile && item.guardian_mobile !== '—' && (
+                            <a
+                              href={`https://wa.me/91${item.guardian_mobile.replace(/\D/g, '')}?text=Dear%20Parent,%20installment%20of%20Rs.${item.pending_amount}%20for%20${item.student_name}%20is%20overdue.%20Please%20pay%20promptly.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg inline-flex items-center transition cursor-pointer"
+                              title="Send WhatsApp Reminder"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Zero Overdue Health Banner (shown when total overdue is 0) */}
+            {activeAgingBucket !== 'upcoming' && (defaulters?.summary.total_overdue_count || 0) === 0 && (
+              <div className="bg-emerald-50/70 border border-emerald-200 p-4 rounded-xl flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-emerald-600 text-white rounded-lg">
+                    <CheckCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-950">Zero Overdue Delinquencies</h4>
+                    <p className="text-[11px] text-emerald-700">
+                      All student accounts in this academic session are on-schedule with no overdue arrears.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 bg-white text-emerald-800 rounded-lg border border-emerald-300 font-mono">
+                  100% On-Schedule
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Defaulters Itemized Table */}
-          <div className="border border-slate-200 rounded-xl overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
-                <tr>
-                  <th className="py-2.5 px-4">Student Name &amp; Code</th>
-                  <th className="py-2.5 px-3">Batch / Division</th>
-                  <th className="py-2.5 px-3">Parent / Guardian Phone</th>
-                  <th className="py-2.5 px-3 text-center">Invoice #</th>
-                  <th className="py-2.5 px-3 text-center">Inst #</th>
-                  <th className="py-2.5 px-3 text-center">Due Date</th>
-                  <th className="py-2.5 px-4 text-right">Pending Amount</th>
-                  <th className="py-2.5 px-3 text-center">Overdue Days</th>
-                  <th className="py-2.5 px-3 text-center">Contact</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {getFilteredDefaulters().length === 0 ? (
+          {/* Upcoming Installments Cashflow Pipeline (Always occupies the space with vital forecast data!) */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 w-full">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-blue-50 text-blue-700 rounded-xl">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Upcoming Cashflow Realization Pipeline</h3>
+                  <p className="text-xs text-slate-500">
+                    Scheduled future installments and expected revenue timeline.
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs font-mono font-bold text-blue-800 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                Pipeline Total: ₹{(defaulters?.summary.upcoming_total || 0).toLocaleString('en-IN')} • {defaulters?.summary.upcoming_count || 0} scheduled
+              </div>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                   <tr>
-                    <td colSpan={9} className="py-10 text-center text-slate-400">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
-                      <p className="font-semibold">No fee defaulters in this aging bracket.</p>
-                    </td>
+                    <th className="py-2.5 px-4">Student Name &amp; Code</th>
+                    <th className="py-2.5 px-3">Batch / Standard</th>
+                    <th className="py-2.5 px-3">Parent Contact</th>
+                    <th className="py-2.5 px-3 text-center">Invoice #</th>
+                    <th className="py-2.5 px-3 text-center">Inst #</th>
+                    <th className="py-2.5 px-3 text-center">Scheduled Due Date</th>
+                    <th className="py-2.5 px-4 text-right">Expected Amount</th>
+                    <th className="py-2.5 px-3 text-center">Timeline</th>
+                    <th className="py-2.5 px-3 text-center">Notify</th>
                   </tr>
-                ) : (
-                  getFilteredDefaulters().map((item) => (
-                    <tr key={item.installment_id} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3 px-4 font-medium text-slate-900">
-                        <span className="font-bold block">{item.student_name}</span>
-                        <span className="font-mono text-[10px] text-slate-500">{item.student_code}</span>
-                      </td>
-                      <td className="py-3 px-3 text-slate-700">{item.batch_name}</td>
-                      <td className="py-3 px-3 font-mono text-slate-700">
-                        <span>{item.guardian_name}</span>
-                        <span className="text-slate-500 block text-[11px]">{item.guardian_mobile}</span>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-blue-700">
-                        {item.invoice_number}
-                      </td>
-                      <td className="py-3 px-3 text-center font-bold">#{item.installment_number}</td>
-                      <td className="py-3 px-3 text-center font-mono text-slate-600">{item.due_date}</td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-rose-700">
-                        ₹{item.pending_amount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className="px-2 py-0.5 rounded font-bold font-mono text-[10px] bg-rose-50 text-rose-700 border border-rose-200">
-                          {item.days_overdue} days
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        {item.guardian_mobile && item.guardian_mobile !== '—' && (
-                          <a
-                            href={`https://wa.me/91${item.guardian_mobile.replace(/\D/g, '')}?text=Dear%20Parent,%20installment%20of%20Rs.${item.pending_amount}%20for%20${item.student_name}%20is%20overdue.%20Please%20pay%20promptly.`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg inline-flex items-center transition cursor-pointer"
-                            title="Send WhatsApp Reminder"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                          </a>
-                        )}
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {defaulters?.buckets.upcoming && defaulters.buckets.upcoming.length > 0 ? (
+                    defaulters.buckets.upcoming.map((item) => (
+                      <tr key={item.installment_id} className="hover:bg-slate-50/80 transition">
+                        <td className="py-3 px-4 font-medium text-slate-900">
+                          <span className="font-bold block">{item.student_name}</span>
+                          <span className="font-mono text-[10px] text-slate-500">{item.student_code}</span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-700">{item.batch_name}</td>
+                        <td className="py-3 px-3 font-mono text-slate-700">
+                          <span>{item.guardian_name}</span>
+                          <span className="text-slate-500 block text-[11px]">{item.guardian_mobile}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-blue-700">
+                          {item.invoice_number}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold">#{item.installment_number}</td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                          {item.due_date}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-700">
+                          ₹{item.pending_amount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded font-bold font-mono text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
+                            {item.days_until_due !== undefined ? `In ${item.days_until_due}d` : 'Upcoming'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          {item.guardian_mobile && item.guardian_mobile !== '—' && (
+                            <a
+                              href={`https://wa.me/91${item.guardian_mobile.replace(/\D/g, '')}?text=Dear%20Parent,%20installment%20of%20Rs.${item.pending_amount}%20for%20${item.student_name}%20is%20scheduled%20due%20on%20${item.due_date}.`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg inline-flex items-center transition cursor-pointer"
+                              title="Send Advance Schedule Reminder"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        No upcoming installments scheduled for this session.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {/* TAB 4: MULTI-YEAR COMPARISON & YOY GROWTH */}
       {activeTab === 'MULTI_YEAR' && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5 w-full">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Multi-Year Trajectory &amp; Year-over-Year Growth</h3>
@@ -841,7 +1060,7 @@ export const FinanceAnalytics: React.FC = () => {
             </div>
           </div>
 
-          <div className="border border-slate-200 rounded-xl overflow-x-auto">
+          <div className="border border-slate-200 rounded-xl overflow-x-auto w-full">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                 <tr>
@@ -1010,3 +1229,4 @@ export const FinanceAnalytics: React.FC = () => {
     </div>
   );
 };
+export default FinanceAnalytics;

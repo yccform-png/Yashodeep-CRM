@@ -624,8 +624,8 @@ async def get_fee_defaulters_aging(
         }
 
         if days_diff <= 0:
-            if days_diff >= -15:
-                buckets["upcoming"].append(item)
+            item["days_until_due"] = abs(days_diff)
+            buckets["upcoming"].append(item)
         elif 1 <= days_diff <= 30:
             buckets["1_30"].append(item)
         elif 31 <= days_diff <= 60:
