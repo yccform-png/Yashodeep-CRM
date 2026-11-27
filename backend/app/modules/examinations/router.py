@@ -97,7 +97,8 @@ async def list_eligible_students_for_paper(
         .options(
             selectinload(ExamSubject.marks).selectinload(ExamMarks.student),
             selectinload(ExamSubject.academic_class),
-            selectinload(ExamSubject.course)
+            selectinload(ExamSubject.course),
+            selectinload(ExamSubject.examination)
         )
         .where(ExamSubject.id == paper_id)
     )
@@ -105,19 +106,24 @@ async def list_eligible_students_for_paper(
     if not paper:
         raise NotFoundException("Exam paper not found")
 
+    ay_id = paper.examination.academic_year_id if paper.examination else None
+    ay_enr_filter = [Enrollment.academic_year_id == ay_id] if ay_id else []
+    ay_batch_filter = [Batch.academic_year_id == ay_id] if ay_id else []
+
     students_map = {}
     student_roll_map = {}
 
     # 1. Scoped by Course: if course_id is specified on the paper
     if paper.course_id:
-        # A. Active students enrolled in this course
+        # A. Active students enrolled in this course for this academic year
         enr_course_stmt = (
             select(Student)
             .join(Enrollment, Enrollment.student_id == Student.id)
             .where(
                 and_(
                     Enrollment.course_id == paper.course_id,
-                    Enrollment.status == "ACTIVE"
+                    Enrollment.status == "ACTIVE",
+                    *ay_enr_filter
                 )
             )
             .distinct()
@@ -125,19 +131,24 @@ async def list_eligible_students_for_paper(
         for s in (await db.execute(enr_course_stmt)).scalars().all():
             students_map[s.id] = s
 
-        # B. Students in batches belonging to this course
+        # B. Students in batches belonging to this course for this academic year
         batch_course_stmt = (
             select(Student, BatchStudent.roll_number)
             .join(BatchStudent, BatchStudent.student_id == Student.id)
             .join(Batch, Batch.id == BatchStudent.batch_id)
-            .where(Batch.course_id == paper.course_id)
+            .where(
+                and_(
+                    Batch.course_id == paper.course_id,
+                    *ay_batch_filter
+                )
+            )
         )
         for s, roll in (await db.execute(batch_course_stmt)).all():
             students_map[s.id] = s
             if roll is not None:
                 student_roll_map[s.id] = roll
 
-        # C. Modular subject enrollment specifically scoped to this course
+        # C. Modular subject enrollment specifically scoped to this course and academic year
         if paper.subject_id:
             subj_enr_stmt = (
                 select(Student)
@@ -147,7 +158,8 @@ async def list_eligible_students_for_paper(
                     and_(
                         EnrollmentSubject.subject_id == paper.subject_id,
                         Enrollment.course_id == paper.course_id,
-                        Enrollment.status == "ACTIVE"
+                        Enrollment.status == "ACTIVE",
+                        *ay_enr_filter
                     )
                 )
                 .distinct()
@@ -157,14 +169,15 @@ async def list_eligible_students_for_paper(
 
     # 2. Scoped by Class: if course_id is not specified, but class_id is
     elif paper.class_id:
-        # A. Active students enrolled in this class
+        # A. Active students enrolled in this class for this academic year
         enr_cls_stmt = (
             select(Student)
             .join(Enrollment, Enrollment.student_id == Student.id)
             .where(
                 and_(
                     Enrollment.class_id == paper.class_id,
-                    Enrollment.status == "ACTIVE"
+                    Enrollment.status == "ACTIVE",
+                    *ay_enr_filter
                 )
             )
             .distinct()
@@ -172,20 +185,25 @@ async def list_eligible_students_for_paper(
         for s in (await db.execute(enr_cls_stmt)).scalars().all():
             students_map[s.id] = s
 
-        # B. Students in batches belonging to courses under this class
+        # B. Students in batches belonging to courses under this class for this academic year
         batch_cls_stmt = (
             select(Student, BatchStudent.roll_number)
             .join(BatchStudent, BatchStudent.student_id == Student.id)
             .join(Batch, Batch.id == BatchStudent.batch_id)
             .join(Course, Course.id == Batch.course_id)
-            .where(Course.class_id == paper.class_id)
+            .where(
+                and_(
+                    Course.class_id == paper.class_id,
+                    *ay_batch_filter
+                )
+            )
         )
         for s, roll in (await db.execute(batch_cls_stmt)).all():
             students_map[s.id] = s
             if roll is not None:
                 student_roll_map[s.id] = roll
 
-        # C. Modular subject enrollment specifically scoped to this class
+        # C. Modular subject enrollment specifically scoped to this class and academic year
         if paper.subject_id:
             subj_enr_stmt = (
                 select(Student)
@@ -195,7 +213,8 @@ async def list_eligible_students_for_paper(
                     and_(
                         EnrollmentSubject.subject_id == paper.subject_id,
                         Enrollment.class_id == paper.class_id,
-                        Enrollment.status == "ACTIVE"
+                        Enrollment.status == "ACTIVE",
+                        *ay_enr_filter
                     )
                 )
                 .distinct()
@@ -483,11 +502,6 @@ async def create_examination(
     if not code:
         raise BadRequestException("Test code is required.")
 
-    # Check for existing code
-    existing_code = (await db.execute(select(Examination).where(Examination.code == code))).scalar_one_or_none()
-    if existing_code:
-        raise BadRequestException(f"Test code '{code}' already exists. Please choose a different test code.")
-
     # Resolve academic year if not provided
     ay_id = data.academic_year_id
     if not ay_id:
@@ -497,6 +511,16 @@ async def create_examination(
         if not curr_ay:
             raise BadRequestException("No academic year configured.")
         ay_id = curr_ay.id
+
+    # Check for existing code scoped to this academic year
+    existing_code = (await db.execute(
+        select(Examination).where(
+            Examination.code == code,
+            Examination.academic_year_id == ay_id
+        )
+    )).scalar_one_or_none()
+    if existing_code:
+        raise BadRequestException(f"Test code '{code}' already exists for this academic year. Please choose a different test code.")
 
     # Resolve exam type if not provided
     et_id = data.exam_type_id

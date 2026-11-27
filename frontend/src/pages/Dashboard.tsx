@@ -18,9 +18,11 @@ import {
 } from 'lucide-react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useAcademicYear } from '../context/AcademicYearContext';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const { selectedAcademicYear } = useAcademicYear();
 
   // Strict RBAC Safeguard: Students and Parents should never access institute operational overview
   if (user?.user_type === 'STUDENT' || user?.user_type === 'PARENT') {
@@ -33,13 +35,14 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchMetrics();
-  }, []);
+    fetchMetrics(selectedAcademicYear?.id);
+  }, [selectedAcademicYear?.id]);
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = async (ayId?: string) => {
     try {
       setLoading(true);
-      const res = await api.get('/reports/dashboard');
+      const params = ayId ? { academic_year_id: ayId } : undefined;
+      const res = await api.get('/reports/dashboard', { params });
       setData(res.data);
     } catch (err) {
       console.error('Failed to load dashboard metrics:', err);

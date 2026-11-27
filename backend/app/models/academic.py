@@ -243,7 +243,7 @@ class Batch(Base, UUIDMixin, TimestampMixin):
     course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=False, index=True)
     academic_year_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("academic_years.id", ondelete="RESTRICT"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)  # e.g., "12th Sci Morning Batch 2026"
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     division: Mapped[str] = mapped_column(String(20), default="A", nullable=False)  # e.g., "A", "B", "C"
     max_capacity: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -256,6 +256,7 @@ class Batch(Base, UUIDMixin, TimestampMixin):
     students: Mapped[List["BatchStudent"]] = relationship("BatchStudent", back_populates="batch")
 
     __table_args__ = (
+        UniqueConstraint("academic_year_id", "code", name="uq_batch_year_code"),
         CheckConstraint("max_capacity > 0", name="check_batch_capacity"),
         CheckConstraint("end_date >= start_date", name="check_batch_dates"),
     )

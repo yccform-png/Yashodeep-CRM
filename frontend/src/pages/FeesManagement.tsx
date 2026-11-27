@@ -89,6 +89,7 @@ interface BatchItem {
   code: string;
   division: string;
   course_id: string;
+  academic_year_id?: string;
 }
 
 interface CourseItem {
@@ -465,14 +466,19 @@ export const FeesManagement: React.FC = () => {
     }
   };
 
-  // Cascading batches for selected class
+  // Cascading batches for selected class and active academic year
   const availableBatches = React.useMemo(() => {
-    if (selectedClassId === 'ALL') return batches;
+    let list = batches;
+    const ayToFilter = selectedAyId && selectedAyId !== 'ALL' ? selectedAyId : selectedAcademicYear?.id;
+    if (ayToFilter) {
+      list = list.filter((b) => b.academic_year_id === ayToFilter);
+    }
+    if (selectedClassId === 'ALL') return list;
     const classCourseIds = new Set(
       courses.filter((c) => c.class_id === selectedClassId).map((c) => c.id)
     );
-    return batches.filter((b) => classCourseIds.has(b.course_id));
-  }, [batches, courses, selectedClassId]);
+    return list.filter((b) => classCourseIds.has(b.course_id));
+  }, [batches, courses, selectedClassId, selectedAyId, selectedAcademicYear?.id]);
 
   // Filtered invoices
   const filteredInvoices = React.useMemo(() => {

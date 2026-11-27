@@ -1,24 +1,28 @@
+import uuid
+from typing import Optional
 from decimal import Decimal
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_, distinct
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.cache import cache_service, CacheKeys
 from app.models.user import User
 from app.models.student import Student
-from app.models.fee import Invoice, Payment
+from app.models.fee import Invoice, Payment, PaymentAllocation
 from app.models.study_room import StudySeat
 from app.models.hostel import HostelBed
 from app.models.attendance import AttendanceRecord
-from app.models.academic import Course
+from app.models.academic import Course, AcademicYear
+from app.models.enrollment import Enrollment
 
 router = APIRouter(prefix="/reports", tags=["Reports & Analytics"])
 
 
 @router.get("/dashboard")
 async def get_dashboard_metrics(
+    academic_year_id: Optional[uuid.UUID] = Query(None),
     current_user: User = Depends(require_role(["ADMIN", "SUPER_ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
@@ -27,16 +31,29 @@ async def get_dashboard_metrics(
     Never hardcoded sample data.
     Cached in Redis for 60 seconds with active write-invalidation.
     Financial metrics are strictly shielded from non-SUPER_ADMIN users.
+    Optionally scoped to selected academic year.
     """
     is_super_admin = current_user.user_type == "SUPER_ADMIN"
-    cache_key = f"{CacheKeys.dashboard_metrics()}:{is_super_admin}"
+    cache_key = f"{CacheKeys.dashboard_metrics()}:{is_super_admin}:{academic_year_id}"
     cached = await cache_service.get(cache_key)
     if cached is not None:
         return cached
 
     # 1. Students Count
-    total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
-    active_students = (await db.execute(select(func.count(Student.id)).where(Student.status == "ACTIVE"))).scalar() or 0
+    if academic_year_id:
+        total_students = (await db.execute(
+            select(func.count(distinct(Student.id)))
+            .join(Enrollment, Enrollment.student_id == Student.id)
+            .where(Enrollment.academic_year_id == academic_year_id)
+        )).scalar() or 0
+        active_students = (await db.execute(
+            select(func.count(distinct(Student.id)))
+            .join(Enrollment, Enrollment.student_id == Student.id)
+            .where(Enrollment.academic_year_id == academic_year_id, Enrollment.status == "ACTIVE")
+        )).scalar() or 0
+    else:
+        total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
+        active_students = (await db.execute(select(func.count(Student.id)).where(Student.status == "ACTIVE"))).scalar() or 0
 
     # 2. Financial Metrics (Computed ONLY if Super Admin)
     total_invoiced = Decimal("0.00")
@@ -45,11 +62,43 @@ async def get_dashboard_metrics(
     recent_payments = []
 
     if is_super_admin:
-        total_invoiced = (await db.execute(select(func.coalesce(func.sum(Invoice.total_amount), 0.00)))).scalar() or Decimal("0.00")
-        total_collected = (await db.execute(select(func.coalesce(func.sum(Payment.amount), 0.00)))).scalar() or Decimal("0.00")
-        total_outstanding = (await db.execute(select(func.coalesce(func.sum(Invoice.balance_amount), 0.00)))).scalar() or Decimal("0.00")
+        if academic_year_id:
+            target_ay = await db.get(AcademicYear, academic_year_id)
+            ay_scope_cond = or_(
+                Invoice.enrollment.has(Enrollment.academic_year_id == academic_year_id),
+                and_(
+                    Invoice.enrollment_id.is_(None),
+                    Invoice.issue_date >= target_ay.start_date,
+                    Invoice.issue_date <= target_ay.end_date
+                ) if target_ay else False
+            )
+            total_invoiced = (await db.execute(
+                select(func.coalesce(func.sum(Invoice.total_amount), 0.00)).where(ay_scope_cond)
+            )).scalar() or Decimal("0.00")
+            total_outstanding = (await db.execute(
+                select(func.coalesce(func.sum(Invoice.balance_amount), 0.00)).where(ay_scope_cond)
+            )).scalar() or Decimal("0.00")
+            total_collected = (await db.execute(
+                select(func.coalesce(func.sum(PaymentAllocation.allocated_amount), 0.00))
+                .join(Invoice, Invoice.id == PaymentAllocation.invoice_id)
+                .where(ay_scope_cond)
+            )).scalar() or Decimal("0.00")
 
-        recent_pay_stmt = select(Payment).order_by(Payment.created_at.desc()).limit(5)
+            recent_pay_stmt = (
+                select(Payment)
+                .join(PaymentAllocation, PaymentAllocation.payment_id == Payment.id)
+                .join(Invoice, Invoice.id == PaymentAllocation.invoice_id)
+                .where(ay_scope_cond)
+                .distinct()
+                .order_by(Payment.created_at.desc())
+                .limit(5)
+            )
+        else:
+            total_invoiced = (await db.execute(select(func.coalesce(func.sum(Invoice.total_amount), 0.00)))).scalar() or Decimal("0.00")
+            total_collected = (await db.execute(select(func.coalesce(func.sum(Payment.amount), 0.00)))).scalar() or Decimal("0.00")
+            total_outstanding = (await db.execute(select(func.coalesce(func.sum(Invoice.balance_amount), 0.00)))).scalar() or Decimal("0.00")
+
+            recent_pay_stmt = select(Payment).order_by(Payment.created_at.desc()).limit(5)
         recent_payments_res = (await db.execute(recent_pay_stmt)).scalars().all()
         recent_payments = [
             {

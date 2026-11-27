@@ -23,7 +23,7 @@ class Examination(Base, UUIDMixin, TimestampMixin):
     academic_year_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("academic_years.id", ondelete="RESTRICT"), nullable=False, index=True)
     exam_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("exam_types.id", ondelete="RESTRICT"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)  # e.g., "Mid-Term CET Evaluation 2026"
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -36,6 +36,7 @@ class Examination(Base, UUIDMixin, TimestampMixin):
     results: Mapped[List["ExamResult"]] = relationship("ExamResult", back_populates="examination", cascade="all, delete-orphan")
 
     __table_args__ = (
+        UniqueConstraint("academic_year_id", "code", name="uq_examination_year_code"),
         CheckConstraint("end_date >= start_date", name="check_examination_dates"),
     )
 

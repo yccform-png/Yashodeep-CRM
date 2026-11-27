@@ -229,8 +229,33 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
       {/* Dynamic Print Isolation CSS */}
       <style>{`
         @media print {
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important;
+          }
           body * {
             visibility: hidden !important;
+          }
+          .no-print, .no-print * {
+            display: none !important;
+          }
+          .print-modal-backdrop,
+          .print-modal-container,
+          .print-modal-body {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            transform: none !important;
           }
           #invoice-print-area, #invoice-print-area * {
             visibility: visible !important;
@@ -243,21 +268,20 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           @page {
             size: A4 portrait;
             margin: 6mm 8mm;
           }
-          .no-print {
-            display: none !important;
-          }
         }
       `}</style>
 
-      <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 no-print overflow-y-auto">
-        <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-150">
+      <div className="print-modal-backdrop fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="print-modal-container bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-150">
           {/* Modal Top Bar */}
-          <div className="px-4 sm:px-6 py-3 sm:py-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="no-print px-4 sm:px-6 py-3 sm:py-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center space-x-2">
               <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
               <div>
@@ -331,7 +355,7 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
           </div>
 
           {/* Modal Body */}
-          <div className="p-2.5 sm:p-6 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
+          <div className="print-modal-body p-2.5 sm:p-6 overflow-y-auto bg-slate-100 flex-1 flex justify-center">
             {loading ? (
               <div className="flex flex-col items-center justify-center p-12 text-slate-400 space-y-2">
                 <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />

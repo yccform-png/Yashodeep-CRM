@@ -106,8 +106,12 @@ async def get_batch_subject_students(
         from app.models.enrollment import Enrollment
         import re
 
-        # Check if course has multiple active batches (e.g. Div A, Div B)
-        course_batches_stmt = select(Batch).where(Batch.course_id == bs.batch.course_id, Batch.is_active == True)
+        # Check if course has multiple active batches in this academic year (e.g. Div A, Div B)
+        course_batches_stmt = select(Batch).where(
+            Batch.course_id == bs.batch.course_id,
+            Batch.academic_year_id == bs.batch.academic_year_id,
+            Batch.is_active == True
+        )
         course_batches = (await db.execute(course_batches_stmt)).scalars().all()
         has_multiple_batches = len(course_batches) > 1
 

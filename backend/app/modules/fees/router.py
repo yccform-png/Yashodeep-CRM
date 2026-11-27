@@ -28,6 +28,12 @@ from app.modules.notifications.service import notification_dispatcher
 from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
 from app.modules.notifications.templates import format_fee_reminder_whatsapp_text, build_whatsapp_click_url
 from app.modules.fees.pricing_engine import PricingEngine, FeePreviewResult
+from app.core.doc_numbers import (
+    resolve_academic_year_string,
+    generate_payment_number,
+    generate_receipt_number,
+    generate_refund_number,
+)
 from app.modules.fees.schemas import (
     FeePreviewRequest, InvoiceResponse, PaymentCreate, PaymentResponse,
     PaymentAllocationResponse, RefundCreate, RefundResponse,
@@ -601,15 +607,18 @@ async def record_payment(
         if existing:
             raise ConflictException(f"Payment with reference {data.transaction_reference} already processed")
 
-    # Generate sequential payment number
-    count_stmt = select(Payment)
-    pay_count = len((await db.execute(count_stmt)).scalars().all()) + 1
-    pay_number = f"PAY-2026-{pay_count:05d}"
-    receipt_num = f"RCP-2026-{pay_count:05d}"
-    while (await db.execute(select(Payment.id).where(Payment.payment_number == pay_number))).scalar_one_or_none():
-        pay_count += 1
-        pay_number = f"PAY-2026-{pay_count:05d}"
-        receipt_num = f"RCP-2026-{pay_count:05d}"
+    # Dynamically resolve academic session year
+    target_ay_id = None
+    if data.allocations:
+        first_inv = await db.get(Invoice, data.allocations[0].invoice_id)
+        if first_inv and first_inv.enrollment_id:
+            enr = await db.get(Enrollment, first_inv.enrollment_id)
+            if enr:
+                target_ay_id = enr.academic_year_id
+
+    year_str = await resolve_academic_year_string(db, target_ay_id, date.today())
+    pay_number = await generate_payment_number(db, year_str)
+    receipt_num = await generate_receipt_number(db, year_str)
 
     payment = Payment(
         institute_id=current_user.institute_id,
@@ -711,9 +720,16 @@ async def process_refund(
     if not payment:
         raise NotFoundException("Payment record not found")
 
-    count_stmt = select(Refund)
-    ref_count = len((await db.execute(count_stmt)).scalars().all()) + 1
-    ref_number = f"REF-2026-{ref_count:05d}"
+    target_ay_id = None
+    if data.invoice_id:
+        target_inv = await db.get(Invoice, data.invoice_id)
+        if target_inv and target_inv.enrollment_id:
+            enr = await db.get(Enrollment, target_inv.enrollment_id)
+            if enr:
+                target_ay_id = enr.academic_year_id
+
+    year_str = await resolve_academic_year_string(db, target_ay_id, date.today())
+    ref_number = await generate_refund_number(db, year_str)
 
     refund = Refund(
         payment_id=data.payment_id,

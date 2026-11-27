@@ -123,6 +123,7 @@ class PromotionRequest(BaseModel):
 class MidSessionSkillEnrollmentRequest(BaseModel):
     student_id: uuid.UUID
     course_id: uuid.UUID
+    academic_year_id: Optional[uuid.UUID] = None
     course_version_id: Optional[uuid.UUID] = None
     batch_id: Optional[uuid.UUID] = None
     discount_amount: Decimal = Decimal("0.00")

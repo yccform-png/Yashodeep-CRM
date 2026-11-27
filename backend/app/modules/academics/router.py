@@ -990,6 +990,13 @@ async def create_batch(
     if (await db.execute(existing_name_stmt)).scalars().first():
         raise ConflictException(f"A batch named '{data.name.strip()}' already exists for this course in this academic year.")
 
+    existing_code_stmt = select(Batch).where(
+        Batch.academic_year_id == data.academic_year_id,
+        Batch.code.ilike(data.code.strip())
+    )
+    if (await db.execute(existing_code_stmt)).scalars().first():
+        raise ConflictException(f"A batch with code '{data.code.strip()}' already exists for this academic year.")
+
     batch = Batch(
         course_id=data.course_id,
         academic_year_id=data.academic_year_id,
@@ -1348,7 +1355,11 @@ async def get_batch_sync_preview(
     if not batch:
         raise NotFoundException(f"Batch {batch_id} not found")
 
-    course_batches_stmt = select(Batch).where(Batch.course_id == batch.course_id, Batch.is_active == True)
+    course_batches_stmt = select(Batch).where(
+        Batch.course_id == batch.course_id,
+        Batch.academic_year_id == batch.academic_year_id,
+        Batch.is_active == True
+    )
     course_batches = (await db.execute(course_batches_stmt)).scalars().all()
     batch_map = {b.id: b for b in course_batches}
     has_multiple_batches = len(course_batches) > 1
@@ -1361,6 +1372,7 @@ async def get_batch_sync_preview(
             selectinload(Enrollment.enrolled_subjects)
         )
         .where(
+            Enrollment.academic_year_id == batch.academic_year_id,
             or_(
                 Enrollment.course_id == batch.course_id,
                 Enrollment.batch_id == batch.id,
@@ -1499,7 +1511,11 @@ async def sync_enrolled_course_students(
     if not batch:
         raise NotFoundException(f"Batch {batch_id} not found")
 
-    course_batches_stmt = select(Batch).where(Batch.course_id == batch.course_id, Batch.is_active == True)
+    course_batches_stmt = select(Batch).where(
+        Batch.course_id == batch.course_id,
+        Batch.academic_year_id == batch.academic_year_id,
+        Batch.is_active == True
+    )
     course_batches = (await db.execute(course_batches_stmt)).scalars().all()
     has_multiple_batches = len(course_batches) > 1
 
@@ -1510,6 +1526,7 @@ async def sync_enrolled_course_students(
             selectinload(Enrollment.enrolled_subjects)
         )
         .where(
+            Enrollment.academic_year_id == batch.academic_year_id,
             or_(
                 Enrollment.course_id == batch.course_id,
                 Enrollment.batch_id == batch.id,
@@ -1861,6 +1878,12 @@ async def transfer_student_batch(
     tgt_batch = (await db.execute(tgt_stmt)).scalar_one_or_none()
     if not tgt_batch:
         raise NotFoundException(f"Target batch {data.target_batch_id} not found")
+
+    if src_batch.academic_year_id != tgt_batch.academic_year_id:
+        raise BadRequestException(
+            "Cannot transfer student between batches of different academic years. "
+            "Use Cohort Rollover to transition students between academic years."
+        )
 
     if src_batch.course_id != tgt_batch.course_id:
         raise BadRequestException("Cannot transfer student between batches of different courses")

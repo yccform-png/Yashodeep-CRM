@@ -78,8 +78,33 @@ export const StudentAdmissionFormModal: React.FC<StudentAdmissionFormModalProps>
       {/* Print-specific layout styles */}
       <style>{`
         @media print {
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important;
+          }
           body * {
             visibility: hidden !important;
+          }
+          .no-print, .no-print * {
+            display: none !important;
+          }
+          .print-modal-backdrop,
+          .print-modal-container,
+          .print-modal-body {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            transform: none !important;
           }
           #admission-form-print-area, #admission-form-print-area * {
             visibility: visible !important;
@@ -93,13 +118,12 @@ export const StudentAdmissionFormModal: React.FC<StudentAdmissionFormModalProps>
             padding: 0 !important;
             background: white !important;
             color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           @page {
             size: A4 portrait;
             margin: 6mm 8mm;
-          }
-          .no-print {
-            display: none !important;
           }
           .print-page-1 {
             page-break-after: always !important;
@@ -125,11 +149,11 @@ export const StudentAdmissionFormModal: React.FC<StudentAdmissionFormModalProps>
       `}</style>
 
       {/* Modal Backdrop (Screen View) */}
-      <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 no-print overflow-y-auto">
-        <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-150">
+      <div className="print-modal-backdrop fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="print-modal-container bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] animate-in fade-in zoom-in-95 duration-150">
           
           {/* Modal Screen Top Bar */}
-          <div className="px-4 sm:px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+          <div className="no-print px-4 sm:px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
             <div className="flex items-center space-x-2.5">
               <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
                 <FileText className="w-4 h-4" />
@@ -162,7 +186,7 @@ export const StudentAdmissionFormModal: React.FC<StudentAdmissionFormModalProps>
           </div>
 
           {/* Modal Scrollable Body */}
-          <div className="p-3 sm:p-6 overflow-y-auto bg-slate-100 flex flex-col items-center space-y-6">
+          <div className="print-modal-body p-3 sm:p-6 overflow-y-auto bg-slate-100 flex flex-col items-center space-y-6">
             {loading ? (
               <div className="py-20 text-center space-y-3">
                 <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>

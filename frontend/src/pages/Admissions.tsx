@@ -36,6 +36,7 @@ import {
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useInstitute } from '../context/InstituteContext';
+import { useAcademicYear } from '../context/AcademicYearContext';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { StudyRoomPhysicalFloorMap } from '../components/StudyRoomPhysicalFloorMap';
@@ -107,6 +108,7 @@ export const Admissions: React.FC = () => {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
   const { institute } = useInstitute();
+  const { selectedAcademicYear } = useAcademicYear();
   const isAdmin = hasRole(['SUPER_ADMIN', 'ADMIN']);
 
   const [step, setStep] = useState(1);
@@ -161,7 +163,9 @@ export const Admissions: React.FC = () => {
       ]);
 
       setAcademicYears(ayRes.data);
-      const curYear = ayRes.data.find((y: any) => y.is_current) || ayRes.data[0];
+      const curYear = (selectedAcademicYear && ayRes.data.some((y: any) => y.id === selectedAcademicYear.id))
+        ? selectedAcademicYear
+        : (ayRes.data.find((y: any) => y.is_current) || ayRes.data[0]);
       if (curYear) setFormData((prev) => ({ ...prev, academic_year_id: curYear.id }));
 
       setClasses(clsRes.data);
@@ -193,11 +197,15 @@ export const Admissions: React.FC = () => {
     }
   }, [formData.class_id, formData.stream_id, classes]);
 
-  // Load available batches for selected course
+  // Load available batches for selected course and academic year
   useEffect(() => {
     if (formData.course_id) {
       api.get('/academics/batches', {
-        params: { course_id: formData.course_id, is_active: true }
+        params: {
+          course_id: formData.course_id,
+          academic_year_id: formData.academic_year_id || undefined,
+          is_active: true
+        }
       }).then((res) => {
         setAvailableBatches(res.data || []);
         if (res.data && res.data.length > 0) {
@@ -213,7 +221,7 @@ export const Admissions: React.FC = () => {
       setAvailableBatches([]);
       setFormData((prev) => ({ ...prev, batch_id: '' }));
     }
-  }, [formData.course_id]);
+  }, [formData.course_id, formData.academic_year_id]);
 
   // Load study seats for gender (all desks so floor map renders full room with occupancy)
   useEffect(() => {
@@ -2469,6 +2477,38 @@ export const Admissions: React.FC = () => {
                         : '2-Year Secondary School Program with discounted fee & division continuity.'}
                     </p>
                   </button>
+                </div>
+              </div>
+
+              {/* Academic Session / Year Selection */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
+                    AY
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800">
+                      Academic Session / Year <span className="text-rose-500">*</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Admission, fee schedules, and division batches will be bound to this academic session.
+                    </p>
+                  </div>
+                </div>
+                <div className="sm:w-64">
+                  <select
+                    value={formData.academic_year_id}
+                    onChange={(e) => {
+                      setFormData((prev) => ({ ...prev, academic_year_id: e.target.value, batch_id: '' }));
+                    }}
+                    className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    {academicYears.map((ay: any) => (
+                      <option key={ay.id} value={ay.id}>
+                        {ay.name} {ay.is_current ? '(Current Session)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

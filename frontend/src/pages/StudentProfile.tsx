@@ -225,7 +225,14 @@ export const StudentProfile: React.FC = () => {
 
   useEffect(() => {
     if (selectedSkillCourseId) {
-      api.get('/academics/batches', { params: { course_id: selectedSkillCourseId, is_active: true } })
+      const activeAyId = profile?.active_enrollment?.academic_year_id || profile?.enrollments?.[0]?.academic_year_id;
+      api.get('/academics/batches', {
+        params: {
+          course_id: selectedSkillCourseId,
+          academic_year_id: activeAyId || undefined,
+          is_active: true
+        }
+      })
         .then((res) => {
           setSkillBatches(res.data || []);
           if (res.data && res.data.length > 0) {
@@ -239,7 +246,7 @@ export const StudentProfile: React.FC = () => {
       setSkillBatches([]);
       setSelectedSkillBatchId('');
     }
-  }, [selectedSkillCourseId]);
+  }, [selectedSkillCourseId, profile]);
 
   const handleConfirmSkillEnrollment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,9 +257,11 @@ export const StudentProfile: React.FC = () => {
     setSkillSubmitting(true);
     setSkillError(null);
     try {
+      const activeAyId = profile?.active_enrollment?.academic_year_id || profile?.enrollments?.[0]?.academic_year_id;
       const payload: any = {
         student_id: id,
         course_id: selectedSkillCourseId,
+        academic_year_id: activeAyId || undefined,
         batch_id: selectedSkillBatchId || undefined,
         discount_amount: Number(skillDiscount) || 0,
         billing_mode: billingMode,

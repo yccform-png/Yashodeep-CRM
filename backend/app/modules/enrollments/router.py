@@ -24,6 +24,12 @@ from app.models.fee import Invoice, InvoiceItem, InstallmentPlan, Installment, P
 from app.models.hostel import HostelBed, BedAllocation
 from app.models.study_room import StudySeat, SeatAllocation
 from app.modules.fees.pricing_engine import PricingEngine
+from app.core.doc_numbers import (
+    resolve_academic_year_string,
+    generate_invoice_number,
+    generate_form_receipt_number,
+    generate_group_code,
+)
 from app.modules.enrollments.schemas import (
     AdmissionWizardRequest, AdmissionConfirmationResponse, PromotionRequest,
     MidSessionSkillEnrollmentRequest, SkillEnrollmentResponse, TrialConversionRequest,
@@ -110,11 +116,8 @@ async def process_full_admission(
 
     # Issue upfront Form Fee receipt for Provisional Trial
     if is_trial_admission and institute and institute.enable_admission_form_fee and institute.admission_form_fee > Decimal("0.00"):
-        pay_count = len((await db.execute(select(Payment))).scalars().all()) + 1
-        rec_number = f"REC-FORM-2026-{pay_count:05d}"
-        while (await db.execute(select(Payment.id).where(Payment.payment_number == rec_number))).scalar_one_or_none():
-            pay_count += 1
-            rec_number = f"REC-FORM-2026-{pay_count:05d}"
+        year_str = await resolve_academic_year_string(db, data.academic_year_id, joining_date)
+        rec_number = await generate_form_receipt_number(db, year_str)
         form_payment = Payment(
             institute_id=current_user.institute_id,
             student_id=student.id,
@@ -176,9 +179,11 @@ async def process_full_admission(
             else:
                 remarks_text = f"{class_name} Multi-Year Combined Admission"
 
+            year_str = await resolve_academic_year_string(db, data.academic_year_id, joining_date)
+            group_code = await generate_group_code(db, year_str)
             enrollment_group = EnrollmentGroup(
                 institute_id=current_user.institute_id,
-                group_code=f"GRP-2026-{grp_count:04d}",
+                group_code=group_code,
                 enrollment_type="COMBINED_MULTI_YEAR",
                 total_years=2,
                 remarks=remarks_text
@@ -233,7 +238,11 @@ async def process_full_admission(
                     batch_candidate = (
                         await db.execute(
                             select(Batch)
-                            .where(Batch.course_id.in_(reg_c_ids), Batch.is_active == True)
+                            .where(
+                                Batch.course_id.in_(reg_c_ids),
+                                Batch.academic_year_id == data.academic_year_id,
+                                Batch.is_active == True
+                            )
                             .order_by(Batch.division.asc(), Batch.created_at.asc())
                         )
                     ).scalars().first()
@@ -243,7 +252,11 @@ async def process_full_admission(
                 batch_candidate = (
                     await db.execute(
                         select(Batch)
-                        .where(Batch.course_id == data.course_id, Batch.is_active == True)
+                        .where(
+                            Batch.course_id == data.course_id,
+                            Batch.academic_year_id == data.academic_year_id,
+                            Batch.is_active == True
+                        )
                         .order_by(Batch.division.asc(), Batch.created_at.asc())
                     )
                 ).scalars().first()
@@ -503,15 +516,9 @@ async def process_full_admission(
         custom_installments=data.custom_installments
     )
 
-    # Generate Official Invoice
-    inv_count = len((await db.execute(select(Invoice))).scalars().all()) + 1
-    invoice_number = f"INV-2026-{inv_count:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count:05d}"
+    # Generate Official Invoice with dynamic session year
+    year_str = await resolve_academic_year_string(db, data.academic_year_id, joining_date)
+    invoice_number = await generate_invoice_number(db, year_str)
 
     inv_status = "ISSUED"
     bal_amt = calc_result.total_amount
@@ -760,12 +767,9 @@ async def convert_trial_to_confirmed_admission(
         custom_installments=data.custom_installments
     )
 
-    # Generate Official Invoice
-    inv_count = len((await db.execute(select(Invoice))).scalars().all()) + 1
-    invoice_number = f"INV-2026-{inv_count:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count:05d}"
+    # Generate Official Invoice with dynamic session year
+    year_str = await resolve_academic_year_string(db, enrollment.academic_year_id if enrollment else None, joining_date)
+    invoice_number = await generate_invoice_number(db, year_str)
 
     inv_status = "ISSUED"
     bal_amt = calc_result.total_amount
@@ -1099,8 +1103,22 @@ async def enroll_existing_student_skill_course(
         raise NotFoundException("Course not found")
 
     # 3. Detect active academic year
-    ay_stmt = select(AcademicYear).where(AcademicYear.is_active == True)
-    active_ay = (await db.execute(ay_stmt)).scalars().first()
+    active_ay = None
+    if data.academic_year_id:
+        active_ay = await db.get(AcademicYear, data.academic_year_id)
+    if not active_ay:
+        # Fallback to student's current active enrollment academic year
+        latest_enr_stmt = (
+            select(Enrollment)
+            .where(Enrollment.student_id == student.id, Enrollment.status == "ACTIVE")
+            .order_by(Enrollment.created_at.desc())
+        )
+        latest_enr = (await db.execute(latest_enr_stmt)).scalars().first()
+        if latest_enr and latest_enr.academic_year_id:
+            active_ay = await db.get(AcademicYear, latest_enr.academic_year_id)
+    if not active_ay:
+        ay_stmt = select(AcademicYear).where(AcademicYear.is_active == True)
+        active_ay = (await db.execute(ay_stmt)).scalars().first()
     if not active_ay:
         ay_stmt = select(AcademicYear).order_by(AcademicYear.start_date.desc())
         active_ay = (await db.execute(ay_stmt)).scalars().first()
@@ -1341,11 +1359,8 @@ async def enroll_existing_student_skill_course(
         custom_installments=data.custom_installments
     )
 
-    inv_count = len((await db.execute(select(Invoice))).scalars().all()) + 1
-    invoice_number = f"INV-2026-{inv_count:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count:05d}"
+    year_str = await resolve_academic_year_string(db, active_ay.id if active_ay else None, date.today())
+    invoice_number = await generate_invoice_number(db, year_str)
     inv_status = "ISSUED"
     bal_amt = calc_result.total_amount
     paid_amt = Decimal("0.00")

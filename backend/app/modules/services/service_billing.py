@@ -7,6 +7,12 @@ from sqlalchemy import select, func
 
 from app.models.service import ServiceType, ServicePlan
 from app.models.fee import Invoice, InvoiceItem, Payment, PaymentAllocation, Receipt
+from app.core.doc_numbers import (
+    resolve_academic_year_string,
+    generate_invoice_number,
+    generate_payment_number,
+    generate_receipt_number,
+)
 
 
 async def get_or_create_custom_plan(db: AsyncSession, service_type_code: str) -> ServicePlan:
@@ -64,11 +70,8 @@ async def create_facility_invoice_and_payment(
 ) -> Invoice:
     """Generates official invoice for desk/bed allocation with line items for Rent and Refundable Deposit."""
     total_amount = rent_amount + deposit_amount
-    inv_count = (await db.execute(select(func.count(Invoice.id)))).scalar() or 0
-    invoice_number = f"INV-2026-{inv_count + 1:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count + 1:05d}"
+    year_str = await resolve_academic_year_string(db, None, date.today())
+    invoice_number = await generate_invoice_number(db, year_str)
 
     inv_status = "ISSUED"
     paid_amt = Decimal("0.00")
@@ -128,11 +131,8 @@ async def create_facility_invoice_and_payment(
         ))
 
     if collect_payment and total_amount > Decimal("0.00"):
-        pay_count = (await db.execute(select(func.count(Payment.id)))).scalar() or 0
-        pay_number = f"PAY-2026-{pay_count + 1:05d}"
-        while (await db.execute(select(Payment.id).where(Payment.payment_number == pay_number))).scalar_one_or_none():
-            pay_count += 1
-            pay_number = f"PAY-2026-{pay_count + 1:05d}"
+        pay_number = await generate_payment_number(db, year_str)
+        receipt_num = await generate_receipt_number(db, year_str)
         payment = Payment(
             institute_id=institute_id,
             student_id=student_id,
@@ -155,7 +155,7 @@ async def create_facility_invoice_and_payment(
 
         db.add(Receipt(
             payment_id=payment.id,
-            receipt_number=f"RCP-2026-{pay_count + 1:05d}"
+            receipt_number=receipt_num
         ))
 
     return invoice
@@ -174,11 +174,8 @@ async def create_facility_renewal_invoice(
     collected_by_user_id: Optional[uuid.UUID]
 ) -> Invoice:
     """Generates subscription renewal invoice for next billing cycle (rent only; deposit already on file)."""
-    inv_count = (await db.execute(select(func.count(Invoice.id)))).scalar() or 0
-    invoice_number = f"INV-2026-{inv_count + 1:05d}"
-    while (await db.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number))).scalar_one_or_none():
-        inv_count += 1
-        invoice_number = f"INV-2026-{inv_count + 1:05d}"
+    year_str = await resolve_academic_year_string(db, None, date.today())
+    invoice_number = await generate_invoice_number(db, year_str)
 
     inv_status = "ISSUED"
     paid_amt = Decimal("0.00")
@@ -221,11 +218,8 @@ async def create_facility_renewal_invoice(
         ))
 
     if collect_payment and renewal_rent_amount > Decimal("0.00"):
-        pay_count = (await db.execute(select(func.count(Payment.id)))).scalar() or 0
-        pay_number = f"PAY-2026-{pay_count + 1:05d}"
-        while (await db.execute(select(Payment.id).where(Payment.payment_number == pay_number))).scalar_one_or_none():
-            pay_count += 1
-            pay_number = f"PAY-2026-{pay_count + 1:05d}"
+        pay_number = await generate_payment_number(db, year_str)
+        receipt_num = await generate_receipt_number(db, year_str)
         payment = Payment(
             institute_id=institute_id,
             student_id=student_id,
@@ -248,7 +242,7 @@ async def create_facility_renewal_invoice(
 
         db.add(Receipt(
             payment_id=payment.id,
-            receipt_number=f"RCP-2026-{pay_count + 1:05d}"
+            receipt_number=receipt_num
         ))
 
     return invoice

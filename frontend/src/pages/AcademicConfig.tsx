@@ -495,7 +495,16 @@ export const AcademicConfig: React.FC = () => {
       nextDiv = String.fromCharCode(maxChar + 1);
       suggestedName = `${targetCourse.name} - Division ${nextDiv}`;
       const cleanCode = (targetCourse.code || 'DIV').replace(/^CRS-/, '');
-      suggestedCode = `BAT-${cleanCode}-${nextDiv}`;
+      let yearSuffix = '';
+      if (curAy?.name) {
+        const parts = curAy.name.match(/\d{4}/g);
+        if (parts && parts.length >= 2) {
+          yearSuffix = `-${parts[0].slice(-2)}${parts[1].slice(-2)}`;
+        } else if (parts && parts.length === 1) {
+          yearSuffix = `-${parts[0].slice(-2)}`;
+        }
+      }
+      suggestedCode = `BAT-${cleanCode}-${nextDiv}${yearSuffix}`;
     }
 
     setBatchForm({
@@ -2134,9 +2143,36 @@ export const AcademicConfig: React.FC = () => {
                   onChange={(e) => {
                     const newAyId = e.target.value;
                     const selectedAy = academicYears.find((y: any) => y.id === newAyId);
+                    const targetCourse = courses.find((c) => c.id === batchForm.course_id);
+                    let nextDiv = 'A';
+                    let newName = batchForm.name;
+                    let newCode = batchForm.code;
+                    if (targetCourse) {
+                      const existingDivs = batches
+                        .filter((b) => b.course_id === targetCourse.id && (!newAyId || b.academic_year_id === newAyId))
+                        .map((b) => (b.division || 'A').toUpperCase());
+                      const charCodes = existingDivs.map((d) => d.charCodeAt(0)).filter((c) => c >= 65 && c <= 90);
+                      const maxChar = charCodes.length > 0 ? Math.max(...charCodes) : 64;
+                      nextDiv = String.fromCharCode(maxChar + 1);
+                      newName = `${targetCourse.name} - Division ${nextDiv}`;
+                      const cleanCode = (targetCourse.code || 'DIV').replace(/^CRS-/, '');
+                      let yearSuffix = '';
+                      if (selectedAy?.name) {
+                        const parts = selectedAy.name.match(/\d{4}/g);
+                        if (parts && parts.length >= 2) {
+                          yearSuffix = `-${parts[0].slice(-2)}${parts[1].slice(-2)}`;
+                        } else if (parts && parts.length === 1) {
+                          yearSuffix = `-${parts[0].slice(-2)}`;
+                        }
+                      }
+                      newCode = `BAT-${cleanCode}-${nextDiv}${yearSuffix}`;
+                    }
                     setBatchForm({
                       ...batchForm,
                       academic_year_id: newAyId,
+                      division: nextDiv,
+                      name: newName,
+                      code: newCode,
                       start_date: selectedAy?.start_date || batchForm.start_date,
                       end_date: selectedAy?.end_date || batchForm.end_date
                     });
@@ -2160,23 +2196,29 @@ export const AcademicConfig: React.FC = () => {
                   onChange={(e) => {
                     const newCourseId = e.target.value;
                     const targetCourse = courses.find((c) => c.id === newCourseId);
-                    let nextDiv = batchForm.division || 'A';
+                    const selectedAy = academicYears.find((y: any) => y.id === batchForm.academic_year_id);
+                    let nextDiv = 'A';
                     let newName = batchForm.name;
                     let newCode = batchForm.code;
                     if (targetCourse) {
                       const existingDivs = batches
-                        .filter((b) => b.course_id === targetCourse.id)
+                        .filter((b) => b.course_id === targetCourse.id && (!batchForm.academic_year_id || b.academic_year_id === batchForm.academic_year_id))
                         .map((b) => (b.division || 'A').toUpperCase());
                       const charCodes = existingDivs.map((d) => d.charCodeAt(0)).filter((c) => c >= 65 && c <= 90);
                       const maxChar = charCodes.length > 0 ? Math.max(...charCodes) : 64;
                       nextDiv = String.fromCharCode(maxChar + 1);
-                      if (!batchForm.name || batchForm.name.includes(' - Division ')) {
-                        newName = `${targetCourse.name} - Division ${nextDiv}`;
-                      }
+                      newName = `${targetCourse.name} - Division ${nextDiv}`;
                       const cleanCode = (targetCourse.code || 'DIV').replace(/^CRS-/, '');
-                      if (!batchForm.code || batchForm.code.startsWith('BAT-')) {
-                        newCode = `BAT-${cleanCode}-${nextDiv}`;
+                      let yearSuffix = '';
+                      if (selectedAy?.name) {
+                        const parts = selectedAy.name.match(/\d{4}/g);
+                        if (parts && parts.length >= 2) {
+                          yearSuffix = `-${parts[0].slice(-2)}${parts[1].slice(-2)}`;
+                        } else if (parts && parts.length === 1) {
+                          yearSuffix = `-${parts[0].slice(-2)}`;
+                        }
                       }
+                      newCode = `BAT-${cleanCode}-${nextDiv}${yearSuffix}`;
                     }
                     setBatchForm({
                       ...batchForm,
