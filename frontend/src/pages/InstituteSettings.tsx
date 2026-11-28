@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { useInstitute } from '../context/InstituteContext';
 import { useAuth } from '../context/AuthContext';
+import { useAcademicYear } from '../context/AcademicYearContext';
 import api from '../api/client';
 import { EditStaffModal } from '../components/EditStaffModal';
 import { ResetStaffPasswordModal } from '../components/ResetStaffPasswordModal';
@@ -58,6 +59,7 @@ interface AdminUser {
 
 export const InstituteSettings: React.FC = () => {
   const { institute, updateInstitute } = useInstitute();
+  const { refreshAcademicYears, setSelectedAcademicYearById, academicYears, currentAcademicYear } = useAcademicYear();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
 
@@ -136,6 +138,8 @@ export const InstituteSettings: React.FC = () => {
     attendance_records_count: number;
     seat_allocations_count: number;
     bed_allocations_count: number;
+    non_current_academic_years_count?: number;
+    non_current_academic_years?: Array<{ id: string; name: string; code: string; start_date: string; end_date: string }>;
   }
   const [dangerPreview, setDangerPreview] = useState<DangerZonePreview | null>(null);
   const [loadingDangerPreview, setLoadingDangerPreview] = useState(false);
@@ -145,6 +149,7 @@ export const InstituteSettings: React.FC = () => {
   const [purgeConfirmationPhrase, setPurgeConfirmationPhrase] = useState('');
   const [confirmCheck1, setConfirmCheck1] = useState(false);
   const [confirmCheck2, setConfirmCheck2] = useState(false);
+  const [purgeNonCurrentYears, setPurgeNonCurrentYears] = useState(true);
   const [purging, setPurging] = useState(false);
   const [purgeSuccess, setPurgeSuccess] = useState<string | null>(null);
   const [purgeError, setPurgeError] = useState<string | null>(null);
@@ -198,11 +203,16 @@ export const InstituteSettings: React.FC = () => {
       setPurgeError(null);
       const res = await api.post('/institutes/danger-zone/purge-test-data', {
         password: purgePassword,
-        confirmation_phrase: purgeConfirmationPhrase.trim()
+        confirmation_phrase: purgeConfirmationPhrase.trim(),
+        purge_non_current_academic_years: purgeNonCurrentYears
       });
       setIsPurgeModalOpen(false);
       setPurgeSuccess(res.data?.message || 'Test data successfully purged for production launch.');
       await fetchDangerPreview();
+      await refreshAcademicYears();
+      if (purgeNonCurrentYears && currentAcademicYear) {
+        setSelectedAcademicYearById(currentAcademicYear.id);
+      }
     } catch (err: any) {
       setPurgeError(err.response?.data?.detail || 'Failed to purge test data. Please verify your password.');
     } finally {
@@ -1791,6 +1801,34 @@ export const InstituteSettings: React.FC = () => {
             </div>
           </div>
 
+          {/* Optional Test Academic Sessions Notice */}
+          {Boolean(dangerPreview?.non_current_academic_years_count) && (
+            <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+              <div className="flex items-start space-x-3">
+                <div className="p-2 bg-amber-500 text-white rounded-xl shrink-0 mt-0.5">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-amber-950">
+                    {dangerPreview?.non_current_academic_years_count} Test / Future Academic Session Date(s) Detected
+                  </h4>
+                  <p className="text-amber-800 text-[11px] mt-0.5">
+                    Sessions created during testing: <strong>{dangerPreview?.non_current_academic_years?.map((y) => `${y.name} (${y.start_date} to ${y.end_date})`).join(', ')}</strong>
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center space-x-2 bg-white px-3 py-2 rounded-xl border border-amber-300 font-bold text-amber-950 cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={purgeNonCurrentYears}
+                  onChange={(e) => setPurgeNonCurrentYears(e.target.checked)}
+                  className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                />
+                <span>Purge Along With Test Data</span>
+              </label>
+            </div>
+          )}
+
           {/* Side-by-Side Scope Breakdown */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Will Be Deleted */}
@@ -1844,7 +1882,7 @@ export const InstituteSettings: React.FC = () => {
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
-                  <span><strong>Academic Structure:</strong> Academic Sessions (2026-2027, 2027-2028), Classes (5th to 12th), Streams, and Subjects.</span>
+                  <span><strong>Academic Structure:</strong> Primary Active Session ({currentAcademicYear?.name || '2026-2027'}), Classes (5th to 12th), Streams, and Subjects.</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
@@ -1934,9 +1972,28 @@ export const InstituteSettings: React.FC = () => {
                         onChange={(e) => setConfirmCheck2(e.target.checked)}
                         className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
                       />
-                      <span>I understand that batch divisions, courses, classes, study room desks, and staff accounts will remain intact.</span>
+                      <span>I understand that master courses, classes, study room desks, and staff accounts will remain intact.</span>
                     </label>
                   </div>
+
+                  {Boolean(dangerPreview?.non_current_academic_years_count) && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 text-xs">
+                      <label className="flex items-start space-x-2.5 cursor-pointer font-bold text-amber-950">
+                        <input
+                          type="checkbox"
+                          checked={purgeNonCurrentYears}
+                          onChange={(e) => setPurgeNonCurrentYears(e.target.checked)}
+                          className="mt-0.5 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                        />
+                        <span>
+                          Also delete {dangerPreview?.non_current_academic_years_count} test academic session date(s) created by admin ({dangerPreview?.non_current_academic_years?.map((y) => y.name).join(', ')})
+                        </span>
+                      </label>
+                      <p className="text-[11px] text-amber-800 ml-6">
+                        Wipes test academic year(s) and any rolled-over test division batches, keeping only the primary active session ({currentAcademicYear?.name || '2026-2027'}).
+                      </p>
+                    </div>
+                  )}
 
                   {/* Lock 2: Confirmation Phrase */}
                   <div className="space-y-1.5 pt-1">

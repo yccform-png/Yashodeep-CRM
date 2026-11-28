@@ -17,6 +17,7 @@ interface AcademicYearContextType {
   setSelectedAcademicYearById: (yearId: string) => void;
   currentAcademicYear: AcademicYear | null;
   setAsCurrentYear: (yearId: string) => Promise<void>;
+  deleteAcademicYear: (yearId: string) => Promise<void>;
   loadingYears: boolean;
   refreshAcademicYears: () => Promise<void>;
 }
@@ -76,6 +77,18 @@ export const AcademicYearProvider: React.FC<{ children: React.ReactNode }> = ({ 
     await fetchYears();
   };
 
+  const deleteAcademicYear = async (yearId: string) => {
+    await apiClient.delete(`/academics/years/${yearId}`);
+    if (selectedAcademicYear?.id === yearId) {
+      const fallback = academicYears.find((y) => y.id !== yearId && y.is_current) || academicYears.find((y) => y.id !== yearId) || null;
+      if (fallback) {
+        setSelectedAcademicYearState(fallback);
+        localStorage.setItem('ycc_selected_ay_id', fallback.id);
+      }
+    }
+    await fetchYears();
+  };
+
   const currentAcademicYear = academicYears.find((y) => y.is_current) || null;
 
   return (
@@ -87,6 +100,7 @@ export const AcademicYearProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setSelectedAcademicYearById,
         currentAcademicYear,
         setAsCurrentYear,
+        deleteAcademicYear,
         loadingYears,
         refreshAcademicYears: fetchYears
       }}

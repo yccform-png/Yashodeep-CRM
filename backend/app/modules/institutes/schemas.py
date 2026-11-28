@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -87,8 +87,11 @@ class DangerZonePreviewResponse(BaseModel):
     attendance_records_count: int
     seat_allocations_count: int
     bed_allocations_count: int
+    non_current_academic_years_count: int = 0
+    non_current_academic_years: List[Dict[str, Any]] = []
 
 
 class DangerZonePurgeRequest(BaseModel):
     password: str
     confirmation_phrase: str
+    purge_non_current_academic_years: bool = False

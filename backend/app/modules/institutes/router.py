@@ -21,7 +21,7 @@ from app.models.study_room import StudySeat, SeatAllocation, SeatReservation, St
 from app.models.hostel import HostelBed, BedAllocation, HostelAttendance, HostelVisitor
 from app.models.attendance import AttendanceSession, AttendanceRecord, AttendanceCorrection
 from app.models.examination import Examination, ExamSubject, ExamMarks, ExamResult
-from app.models.academic import BatchStudent
+from app.models.academic import AcademicYear, Batch, BatchSubject, BatchStudent
 from app.models.notification import Notification, NotificationOutbox
 from app.modules.institutes.schemas import (
     InstituteResponse, InstituteUpdate,
@@ -107,6 +107,21 @@ async def preview_test_data_to_purge(
     seat_allocations_count = (await db.execute(select(func.count(SeatAllocation.id)))).scalar() or 0
     bed_allocations_count = (await db.execute(select(func.count(BedAllocation.id)))).scalar() or 0
 
+    non_current_years_res = await db.execute(
+        select(AcademicYear).where(AcademicYear.is_current.is_(False)).order_by(AcademicYear.start_date.asc())
+    )
+    non_current_years = non_current_years_res.scalars().all()
+    non_current_years_data = [
+        {
+            "id": str(y.id),
+            "name": y.name,
+            "code": y.code,
+            "start_date": str(y.start_date),
+            "end_date": str(y.end_date)
+        }
+        for y in non_current_years
+    ]
+
     return DangerZonePreviewResponse(
         students_count=students_count,
         guardians_count=guardians_count,
@@ -118,7 +133,9 @@ async def preview_test_data_to_purge(
         exam_marks_count=exam_marks_count,
         attendance_records_count=attendance_records_count,
         seat_allocations_count=seat_allocations_count,
-        bed_allocations_count=bed_allocations_count
+        bed_allocations_count=bed_allocations_count,
+        non_current_academic_years_count=len(non_current_years_data),
+        non_current_academic_years=non_current_years_data
     )
 
 
@@ -217,6 +234,25 @@ async def purge_test_data_for_production(
     await db.execute(delete(NotificationOutbox))
     await db.execute(delete(Notification))
 
+    # Step I (Optional): Purge non-current Academic Years / Sessions (e.g. 2027-2028 created during testing)
+    purged_years_count = 0
+    if data.purge_non_current_academic_years:
+        non_curr_stmt = select(AcademicYear.id).where(AcademicYear.is_current.is_(False))
+        non_curr_year_ids = (await db.execute(non_curr_stmt)).scalars().all()
+        if non_curr_year_ids:
+            purged_years_count = len(non_curr_year_ids)
+            # Find batches tied to these non-current years
+            batches_stmt = select(Batch.id).where(Batch.academic_year_id.in_(non_curr_year_ids))
+            batch_ids = (await db.execute(batches_stmt)).scalars().all()
+            if batch_ids:
+                await db.execute(delete(BatchSubject).where(BatchSubject.batch_id.in_(batch_ids)))
+                await db.execute(delete(Batch).where(Batch.id.in_(batch_ids)))
+
+            # Delete the non-current academic years
+            await db.execute(delete(AcademicYear).where(AcademicYear.id.in_(non_curr_year_ids)))
+            await cache_service.delete(CacheKeys.academic_years())
+            await cache_service.delete_pattern(CacheKeys.academic_batches_pattern())
+
     # Commit all deletions atomically
     await db.commit()
 
@@ -227,11 +263,17 @@ async def purge_test_data_for_production(
         await cache_service.delete_pattern("students:*")
         await cache_service.delete_pattern("reports:*")
         await cache_service.delete_pattern("attendance:*")
+        if data.purge_non_current_academic_years:
+            await cache_service.delete(CacheKeys.academic_years())
+            await cache_service.delete_pattern(CacheKeys.academic_batches_pattern())
     except Exception:
         pass
 
+    extra_msg = f" Also purged {purged_years_count} test/future academic session(s)." if purged_years_count > 0 else ""
     return {
-        "success": True,
-        "message": "All test transactional data, student profiles, invoices, and exam marks have been permanently wiped. Institute master configuration is clean and ready for production."
+        "status": "SUCCESS",
+        "message": f"Successfully wiped all test data and reset Yashodeep ERP for production launch.{extra_msg}",
+        "purged_non_current_academic_years_count": purged_years_count,
+        "reset_status": "READY_FOR_ADMISSIONS"
     }
 

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_, delete
+from sqlalchemy import select, or_, and_, delete, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -101,6 +101,62 @@ async def set_current_academic_year(
     await db.refresh(target)
     await cache_service.delete(CacheKeys.academic_years())
     return target
+
+
+@router.delete("/years/{year_id}")
+async def delete_academic_year(
+    year_id: uuid.UUID,
+    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Deletes an academic year / session created during testing or setup.
+    Strictly allowed for SUPER_ADMIN.
+    Cannot delete the currently active session.
+    Cannot delete if active student enrollments exist in this session.
+    """
+    target = await db.get(AcademicYear, year_id)
+    if not target:
+        raise NotFoundException("Academic Year not found")
+
+    if target.is_current:
+        raise BadRequestException(
+            f"Cannot delete Academic Session '{target.name}' because it is marked as the Current Active Session. "
+            "Please switch another session to current first."
+        )
+
+    # Check for student enrollments
+    enr_count = (await db.execute(
+        select(func.count(Enrollment.id)).where(Enrollment.academic_year_id == year_id)
+    )).scalar() or 0
+    if enr_count > 0:
+        raise BadRequestException(
+            f"Cannot delete Academic Session '{target.name}' because it contains {enr_count} student enrollment(s). "
+            "Please purge test student data first from Danger Zone."
+        )
+
+    # Clean up any batches configured for this academic year
+    batch_ids = (await db.execute(
+        select(Batch.id).where(Batch.academic_year_id == year_id)
+    )).scalars().all()
+    if batch_ids:
+        await db.execute(delete(BatchSubject).where(BatchSubject.batch_id.in_(batch_ids)))
+        await db.execute(delete(BatchStudent).where(BatchStudent.batch_id.in_(batch_ids)))
+        await db.execute(delete(Batch).where(Batch.id.in_(batch_ids)))
+
+    await db.delete(target)
+    await db.commit()
+
+    # Invalidate cache
+    await cache_service.delete(CacheKeys.academic_years())
+    await cache_service.delete_pattern(CacheKeys.academic_batches_pattern())
+    await CacheInvalidator.invalidate_academic_all()
+
+    return {
+        "status": "SUCCESS",
+        "message": f"Academic Session '{target.name}' ({target.code}) and its {len(batch_ids)} associated division batch(es) were permanently deleted.",
+        "year_id": str(year_id)
+    }
 
 
 # --- Classes ---

@@ -39,10 +39,12 @@ import {
   ChevronUp,
   ChevronRight,
   LayoutGrid,
-  ListFilter
+  ListFilter,
+  AlertTriangle
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAcademicYear } from '../context/AcademicYearContext';
+import { useAuth } from '../context/AuthContext';
 import { CohortPromotionWizard } from '../components/CohortPromotionWizard';
 
 interface ClassItem {
@@ -178,8 +180,12 @@ interface BatchItem {
 }
 
 export const AcademicConfig: React.FC = () => {
-  const { selectedAcademicYear, academicYears, setSelectedAcademicYear } = useAcademicYear();
-  const [activeTab, setActiveTab] = useState<'COURSES' | 'BATCHES' | 'SUBJECTS' | 'CLASSES' | 'STREAMS' | 'ROLLOVER'>('COURSES');
+  const { hasRole } = useAuth();
+  const isSuperAdmin = hasRole(['SUPER_ADMIN']);
+  const { selectedAcademicYear, academicYears, setSelectedAcademicYear, setAsCurrentYear, deleteAcademicYear } = useAcademicYear();
+  const [activeTab, setActiveTab] = useState<'COURSES' | 'BATCHES' | 'SUBJECTS' | 'CLASSES' | 'STREAMS' | 'ROLLOVER' | 'SESSIONS'>('COURSES');
+  const [sessionToDelete, setSessionToDelete] = useState<any | null>(null);
+  const [deletingSessionLoading, setDeletingSessionLoading] = useState(false);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [streams, setStreams] = useState<StreamItem[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
@@ -894,6 +900,7 @@ export const AcademicConfig: React.FC = () => {
         {[
           { key: 'COURSES', label: 'Master Courses', count: courses.length },
           { key: 'BATCHES', label: 'Teaching Batches', count: batches.length },
+          { key: 'SESSIONS', label: 'Academic Sessions (Dates)', count: academicYears.length },
           { key: 'ROLLOVER', label: 'Cohort Promotion & Rollover', count: 'New', isNew: true },
           { key: 'SUBJECTS', label: 'Subjects Catalog', count: subjects.length },
           { key: 'CLASSES', label: 'Classes (5th - 12th)', count: classes.length },
@@ -1600,6 +1607,111 @@ export const AcademicConfig: React.FC = () => {
                 <p className="text-xs text-slate-500">{str.description || 'Configured stream for higher secondary.'}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: SESSIONS (Academic Sessions & Dates Management) */}
+      {activeTab === 'SESSIONS' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <span>Academic Sessions &amp; Calendar Dates</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Manage institutional academic sessions, operational date ranges, and delete test sessions created during testing.
+              </p>
+            </div>
+            {isSuperAdmin && (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0 self-start sm:self-center">
+                Super Admin Access
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {academicYears.map((ay) => {
+              const isCurrent = ay.is_current;
+              return (
+                <div
+                  key={ay.id}
+                  className={`p-5 bg-white rounded-2xl border transition shadow-xs space-y-4 ${
+                    isCurrent ? 'border-emerald-300 ring-2 ring-emerald-500/20' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <h4 className="text-base font-bold text-slate-900">{ay.name}</h4>
+                        <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          {ay.code}
+                        </span>
+                        {isCurrent ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center space-x-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>CURRENT ACTIVE SESSION</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                            Upcoming / Test Session
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        🗓️ <strong>Calendar Duration:</strong> {ay.start_date} to {ay.end_date}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <div>
+                      {!isCurrent ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await setAsCurrentYear(ay.id);
+                              setFeedback({ type: 'success', text: `Academic session ${ay.name} is now set as the current active session.` });
+                            } catch (err: any) {
+                              setFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to switch session' });
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                        >
+                          Set as Current Session
+                        </button>
+                      ) : (
+                        <span className="text-xs font-semibold text-emerald-700 flex items-center space-x-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Active session for admissions &amp; reports</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {isSuperAdmin && (
+                      <div>
+                        {isCurrent ? (
+                          <span className="text-[11px] text-slate-400 font-medium italic" title="Active session cannot be deleted">
+                            Protected (Active)
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setSessionToDelete(ay)}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Delete Session</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -3087,6 +3199,55 @@ export const AcademicConfig: React.FC = () => {
                   <span>Import Selected ({selectedSyncStudentIds.length})</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Academic Session Modal */}
+      {sessionToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 max-w-md w-full p-6 animate-in zoom-in-95 space-y-4">
+            <div className="flex items-center space-x-2 text-rose-600">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="text-base font-bold text-slate-900">Delete Academic Session</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete academic session <strong>{sessionToDelete.name}</strong> ({sessionToDelete.code})?
+            </p>
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 leading-relaxed">
+              This will remove the session date configuration and any empty division batches configured for it.
+              If student enrollments exist in this year, you must purge them first from Danger Zone.
+            </div>
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSessionToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingSessionLoading}
+                onClick={async () => {
+                  try {
+                    setDeletingSessionLoading(true);
+                    await deleteAcademicYear(sessionToDelete.id);
+                    setFeedback({ type: 'success', text: `Academic session ${sessionToDelete.name} was successfully deleted.` });
+                    setSessionToDelete(null);
+                  } catch (err: any) {
+                    setFeedback({ type: 'error', text: err.response?.data?.detail || 'Failed to delete academic session.' });
+                    setSessionToDelete(null);
+                  } finally {
+                    setDeletingSessionLoading(false);
+                  }
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-600/25 cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+              >
+                {deletingSessionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Permanently Delete Session</span>
+              </button>
             </div>
           </div>
         </div>
