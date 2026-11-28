@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap, KeyRound, Check } from 'lucide-react';
+import { Calendar, Bell, Search, Shield, ChevronDown, Menu, GraduationCap, KeyRound, Check, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 import { ChangePasswordModal } from '../ChangePasswordModal';
+import { usePWA } from '../../hooks/usePWA';
 
 interface TopbarProps {
   onToggleMobileNav?: () => void;
@@ -13,6 +14,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
   const { academicYears, selectedAcademicYear, setSelectedAcademicYear } = useAcademicYear();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isAyMenuOpen, setIsAyMenuOpen] = useState(false);
+  const { canInstall, triggerInstall } = usePWA();
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between flex-shrink-0 z-30">
@@ -133,6 +135,18 @@ export const Topbar: React.FC<TopbarProps> = ({ onToggleMobileNav }) => {
           <Bell className="w-4 h-4" />
           <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-2 right-2 ring-2 ring-white"></span>
         </button>
+
+        {/* PWA Install App Button — only shown when browser fires the install prompt */}
+        {canInstall && (
+          <button
+            onClick={triggerInstall}
+            className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
+            title="Install YCC ERP as an app on this device (no App Store needed)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Install App</span>
+          </button>
+        )}
 
         {/* Change Password Trigger */}
         <button

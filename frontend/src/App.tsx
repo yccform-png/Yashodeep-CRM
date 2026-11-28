@@ -1,8 +1,10 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { AcademicYearProvider } from './context/AcademicYearContext';
 import { MainLayout } from './components/layout/MainLayout';
+import { usePWA } from './hooks/usePWA';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Admissions } from './pages/Admissions';
@@ -52,10 +54,27 @@ const RoleBasedHomeRedirect: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  const { hasUpdate, applyUpdate } = usePWA();
+
   return (
-    <BrowserRouter>
-      <AcademicYearProvider>
-        <Routes>
+    <>
+      {hasUpdate && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-indigo-600 text-white px-4 py-2 flex items-center justify-between text-sm font-medium shadow-lg">
+          <div className="flex items-center space-x-2">
+            <span>🚀 A new version of Yashodeep ERP is available!</span>
+          </div>
+          <button
+            onClick={applyUpdate}
+            className="flex items-center space-x-1.5 px-3 py-1 bg-white text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-50 transition shadow-sm cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Update Now</span>
+          </button>
+        </div>
+      )}
+      <BrowserRouter>
+        <AcademicYearProvider>
+          <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
 
@@ -208,6 +227,7 @@ export const App: React.FC = () => {
       </Routes>
       </AcademicYearProvider>
     </BrowserRouter>
+    </>
   );
 };
 
