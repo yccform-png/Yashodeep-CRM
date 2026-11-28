@@ -19,6 +19,9 @@ from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.fee import Payment, PaymentAllocation, Invoice, InstallmentPlan, Installment, Receipt
 from app.models.examination import Examination, ExamResult, ExamSubject
 from app.models.enrollment import Enrollment
+from app.models.hostel import BedAllocation, HostelBed, HostelRoom, HostelBuilding
+from app.models.study_room import SeatAllocation, StudySeat, StudyRoom
+from app.models.service import StudentService, ServicePlan
 
 from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
 from app.modules.notifications.providers.brevo_email import brevo_email_client
@@ -35,6 +38,12 @@ from app.modules.notifications.templates import (
     format_promotion_confirmation_whatsapp,
     format_promotion_confirmation_email,
     format_facility_allocation_email,
+    format_facility_expiring_whatsapp,
+    format_facility_expiring_whatsapp_text,
+    format_facility_expiring_email,
+    format_facility_expired_whatsapp,
+    format_facility_expired_whatsapp_text,
+    format_facility_expired_email,
     wrap_html_email
 )
 
@@ -1138,6 +1147,376 @@ class NotificationDispatcher:
 
             except Exception as e:
                 logger.error(f"Error in dispatch_facility_allocation_welcome: {e}", exc_info=True)
+
+    async def dispatch_facility_expiry_notice(
+        self,
+        student_id: uuid.UUID,
+        facility_type: str,     # "STUDY_ROOM" or "HOSTEL"
+        allocation_id: uuid.UUID,
+        unit_label: str,
+        location_label: str,
+        end_date: date,
+        days_remaining: int,    # 3, 2, 1 (expiring) or <= 0 (expired)
+        monthly_renewal_charge: Decimal
+    ):
+        """
+        Dispatches 1 expiry reminder per day (T-3, T-2, T-1) or renewal notice (Expired)
+        to student and parents via Meta WhatsApp & Brevo Email.
+        """
+        async with AsyncSessionLocal() as db:
+            try:
+                query = (
+                    select(Student)
+                    .options(
+                        selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian)
+                    )
+                    .where(Student.id == student_id)
+                )
+                student = (await db.execute(query)).scalar_one_or_none()
+                if not student:
+                    return
+
+                student_name = f"{student.first_name} {student.last_name}".strip()
+                prn = student.prn or student.student_code or "PRN-PENDING"
+                parent_name, parent_phone, parent_email = self._resolve_contact(student)
+                contact_name = parent_name or student_name
+                is_expired = days_remaining <= 0
+                event_type = "FACILITY_EXPIRED_NOTICE" if is_expired else "FACILITY_EXPIRING_REMINDER"
+
+                end_date_str = end_date.strftime("%d-%b-%Y")
+                renewal_float = float(monthly_renewal_charge)
+
+                # 1. Format WhatsApp
+                if is_expired:
+                    wa_template = format_facility_expired_whatsapp(
+                        recipient_name=contact_name,
+                        student_name=student_name,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+                    wa_text = format_facility_expired_whatsapp_text(
+                        recipient_name=contact_name,
+                        student_name=student_name,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+                else:
+                    wa_template = format_facility_expiring_whatsapp(
+                        recipient_name=contact_name,
+                        student_name=student_name,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        days_remaining=days_remaining,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+                    wa_text = format_facility_expiring_whatsapp_text(
+                        recipient_name=contact_name,
+                        student_name=student_name,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        days_remaining=days_remaining,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+
+                # Send WhatsApp to parent and/or student
+                phones_to_send = []
+                if parent_phone:
+                    phones_to_send.append(parent_phone)
+                if student.mobile and student.mobile != parent_phone:
+                    phones_to_send.append(student.mobile)
+
+                for phone in phones_to_send:
+                    outbox = await self._log_outbox(
+                        db,
+                        event_type=event_type,
+                        recipient_target=phone,
+                        channel="WHATSAPP",
+                        payload={
+                            "allocation_id": str(allocation_id),
+                            "facility_type": facility_type,
+                            "days_remaining": days_remaining,
+                            "end_date": end_date_str,
+                            "message_text": wa_text
+                        }
+                    )
+                    try:
+                        if meta_whatsapp_client.enabled:
+                            await meta_whatsapp_client.send_template_message(
+                                to_phone=phone,
+                                template_name=wa_template["name"],
+                                language_code=wa_template["language"]["code"],
+                                components=wa_template["components"]
+                            )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch facility expiry WhatsApp to {phone}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+                # 2. Format Email
+                if is_expired:
+                    email_payload = format_facility_expired_email(
+                        student_name=student_name,
+                        prn=prn,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        location_label=location_label,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+                else:
+                    email_payload = format_facility_expiring_email(
+                        student_name=student_name,
+                        prn=prn,
+                        facility_type=facility_type,
+                        unit_label=unit_label,
+                        location_label=location_label,
+                        days_remaining=days_remaining,
+                        end_date_str=end_date_str,
+                        monthly_renewal_charge=renewal_float
+                    )
+
+                emails_to_send = []
+                if parent_email:
+                    emails_to_send.append((parent_email, parent_name or "Parent / Guardian"))
+                if student.email and (not parent_email or student.email.lower() != parent_email.lower()):
+                    emails_to_send.append((student.email, student_name))
+
+                for target_email, target_name in emails_to_send:
+                    outbox = await self._log_outbox(
+                        db,
+                        event_type=event_type,
+                        recipient_target=target_email,
+                        channel="EMAIL",
+                        payload={
+                            "allocation_id": str(allocation_id),
+                            "facility_type": facility_type,
+                            "days_remaining": days_remaining,
+                            "subject": email_payload["subject"]
+                        }
+                    )
+                    try:
+                        await brevo_email_client.send_transactional_email(
+                            to_email=target_email,
+                            to_name=target_name,
+                            subject=email_payload["subject"],
+                            html_content=email_payload["html_content"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch facility expiry Email to {target_email}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+            except Exception as e:
+                logger.error(f"Error in dispatch_facility_expiry_notice: {e}", exc_info=True)
+
+    async def scan_and_dispatch_facility_expiry_reminders(
+        self,
+        days_ahead: int = 3,
+        include_expired: bool = True,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Scans for active Hostel Bed and Study Room Seat allocations expiring in
+        the next 3 days (1 reminder per day) or expired today/yesterday (renewal notice).
+        Uses NotificationOutbox to guarantee strict idempotency (max 1 message per day).
+        """
+        async with AsyncSessionLocal() as db:
+            today = date.today()
+            start_of_today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+            dispatched = []
+            skipped = []
+
+            # -------------------------------------------------------------
+            # A. Scan Hostel Bed Allocations
+            # -------------------------------------------------------------
+            bed_query = (
+                select(BedAllocation)
+                .options(
+                    selectinload(BedAllocation.student)
+                    .selectinload(Student.guardians)
+                    .selectinload(StudentGuardian.guardian),
+                    selectinload(BedAllocation.hostel_bed)
+                    .selectinload(HostelBed.room)
+                    .selectinload(HostelRoom.building),
+                    selectinload(BedAllocation.student_service)
+                    .selectinload(StudentService.service_plan)
+                )
+                .where(BedAllocation.status == "ACTIVE")
+            )
+            bed_allocations = (await db.execute(bed_query)).scalars().all()
+
+            for b_alloc in bed_allocations:
+                days_diff = (b_alloc.end_date - today).days
+
+                # Eligible if:
+                # 1. Expiring in 1, 2, or 3 days (days_ahead)
+                # 2. Expired today or recently (days_diff in [0, -1])
+                is_expiring = 1 <= days_diff <= days_ahead
+                is_expired = days_diff in [0, -1]
+
+                if not (is_expiring or (include_expired and is_expired)):
+                    continue
+
+                alloc_id_str = str(b_alloc.id)
+
+                if not force:
+                    # Check if already reminded today for this allocation
+                    outbox_check = await db.execute(
+                        select(NotificationOutbox.id)
+                        .where(
+                            NotificationOutbox.event_type.in_(["FACILITY_EXPIRING_REMINDER", "FACILITY_EXPIRED_NOTICE"]),
+                            NotificationOutbox.created_at >= start_of_today,
+                            cast(NotificationOutbox.payload, String).like(f"%{alloc_id_str}%")
+                        )
+                        .limit(1)
+                    )
+                    if outbox_check.scalars().first():
+                        skipped.append({
+                            "allocation_id": alloc_id_str,
+                            "facility_type": "HOSTEL",
+                            "unit": f"Bed {b_alloc.hostel_bed.bed_number if b_alloc.hostel_bed else ''}",
+                            "end_date": str(b_alloc.end_date),
+                            "days_remaining": days_diff,
+                            "reason": "already_reminded_today"
+                        })
+                        continue
+
+                # Prepare details
+                bed_num = b_alloc.hostel_bed.bed_number if b_alloc.hostel_bed else "Bed"
+                room_num = b_alloc.hostel_bed.room.room_number if b_alloc.hostel_bed and b_alloc.hostel_bed.room else "Room"
+                bld_name = b_alloc.hostel_bed.room.building.name if b_alloc.hostel_bed and b_alloc.hostel_bed.room and b_alloc.hostel_bed.room.building else "Hostel"
+
+                unit_label = f"Bed {bed_num} (Room {room_num})"
+                location_label = f"{bld_name} - Room {room_num}"
+
+                # Calculate single-month renewal charge
+                monthly_charge = Decimal("0.00")
+                if b_alloc.student_service and b_alloc.student_service.service_plan:
+                    monthly_charge = Decimal(str(b_alloc.student_service.service_plan.base_amount or 0.00))
+
+                try:
+                    await self.dispatch_facility_expiry_notice(
+                        student_id=b_alloc.student_id,
+                        facility_type="HOSTEL",
+                        allocation_id=b_alloc.id,
+                        unit_label=unit_label,
+                        location_label=location_label,
+                        end_date=b_alloc.end_date,
+                        days_remaining=days_diff,
+                        monthly_renewal_charge=monthly_charge
+                    )
+                    dispatched.append({
+                        "allocation_id": alloc_id_str,
+                        "facility_type": "HOSTEL",
+                        "unit": unit_label,
+                        "student_id": str(b_alloc.student_id),
+                        "end_date": str(b_alloc.end_date),
+                        "days_remaining": days_diff,
+                        "status": "EXPIRED" if days_diff <= 0 else f"EXPIRING_IN_{days_diff}_DAYS"
+                    })
+                except Exception as exc:
+                    logger.error(f"Failed to dispatch hostel expiry notice for {alloc_id_str}: {exc}")
+
+            # -------------------------------------------------------------
+            # B. Scan Study Room Seat Allocations
+            # -------------------------------------------------------------
+            seat_query = (
+                select(SeatAllocation)
+                .options(
+                    selectinload(SeatAllocation.student)
+                    .selectinload(Student.guardians)
+                    .selectinload(StudentGuardian.guardian),
+                    selectinload(SeatAllocation.study_seat)
+                    .selectinload(StudySeat.study_room),
+                    selectinload(SeatAllocation.student_service)
+                    .selectinload(StudentService.service_plan)
+                )
+                .where(SeatAllocation.status == "ACTIVE")
+            )
+            seat_allocations = (await db.execute(seat_query)).scalars().all()
+
+            for s_alloc in seat_allocations:
+                days_diff = (s_alloc.end_date - today).days
+
+                is_expiring = 1 <= days_diff <= days_ahead
+                is_expired = days_diff in [0, -1]
+
+                if not (is_expiring or (include_expired and is_expired)):
+                    continue
+
+                alloc_id_str = str(s_alloc.id)
+
+                if not force:
+                    outbox_check = await db.execute(
+                        select(NotificationOutbox.id)
+                        .where(
+                            NotificationOutbox.event_type.in_(["FACILITY_EXPIRING_REMINDER", "FACILITY_EXPIRED_NOTICE"]),
+                            NotificationOutbox.created_at >= start_of_today,
+                            cast(NotificationOutbox.payload, String).like(f"%{alloc_id_str}%")
+                        )
+                        .limit(1)
+                    )
+                    if outbox_check.scalars().first():
+                        skipped.append({
+                            "allocation_id": alloc_id_str,
+                            "facility_type": "STUDY_ROOM",
+                            "unit": f"Desk {s_alloc.study_seat.seat_number if s_alloc.study_seat else ''}",
+                            "end_date": str(s_alloc.end_date),
+                            "days_remaining": days_diff,
+                            "reason": "already_reminded_today"
+                        })
+                        continue
+
+                seat_num = s_alloc.study_seat.seat_number if s_alloc.study_seat else "Desk"
+                room_name = s_alloc.study_seat.study_room.name if s_alloc.study_seat and s_alloc.study_seat.study_room else "Reading Hall"
+
+                unit_label = f"Desk {seat_num}"
+                location_label = f"{room_name} - Seat {seat_num}"
+
+                monthly_charge = Decimal("0.00")
+                if s_alloc.student_service and s_alloc.student_service.service_plan:
+                    monthly_charge = Decimal(str(s_alloc.student_service.service_plan.base_amount or 0.00))
+
+                try:
+                    await self.dispatch_facility_expiry_notice(
+                        student_id=s_alloc.student_id,
+                        facility_type="STUDY_ROOM",
+                        allocation_id=s_alloc.id,
+                        unit_label=unit_label,
+                        location_label=location_label,
+                        end_date=s_alloc.end_date,
+                        days_remaining=days_diff,
+                        monthly_renewal_charge=monthly_charge
+                    )
+                    dispatched.append({
+                        "allocation_id": alloc_id_str,
+                        "facility_type": "STUDY_ROOM",
+                        "unit": unit_label,
+                        "student_id": str(s_alloc.student_id),
+                        "end_date": str(s_alloc.end_date),
+                        "days_remaining": days_diff,
+                        "status": "EXPIRED" if days_diff <= 0 else f"EXPIRING_IN_{days_diff}_DAYS"
+                    })
+                except Exception as exc:
+                    logger.error(f"Failed to dispatch study room expiry notice for {alloc_id_str}: {exc}")
+
+            return {
+                "success": True,
+                "scan_date": str(today),
+                "total_dispatched": len(dispatched),
+                "total_skipped": len(skipped),
+                "dispatched": dispatched,
+                "skipped": skipped
+            }
+
 
 
 notification_dispatcher = NotificationDispatcher()

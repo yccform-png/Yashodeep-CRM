@@ -2,7 +2,7 @@ import uuid
 import logging
 from typing import Optional, List
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Request, Response, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 
@@ -20,6 +20,8 @@ from app.modules.notifications.schemas import (
 from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
 from app.modules.notifications.providers.brevo_email import brevo_email_client
 from app.modules.notifications.templates import wrap_html_email
+from app.modules.notifications.service import notification_dispatcher
+from app.core.exceptions import BadRequestException, ForbiddenException
 
 logger = logging.getLogger(__name__)
 
@@ -240,3 +242,54 @@ async def meta_whatsapp_receive_webhook(request: Request, db: AsyncSession = Dep
     except Exception as exc:
         logger.error(f"Error handling Meta WhatsApp webhook: {exc}")
         return {"status": "error", "detail": str(exc)}
+
+
+# -----------------------------------------------------------------------------
+# 5. AUTOMATED FACILITY TENANCY EXPIRY PROCESSOR (CRON-JOB.ORG COMPATIBLE)
+# -----------------------------------------------------------------------------
+@router.api_route("/reminders/process-facility-expiries", methods=["GET", "POST"])
+async def process_facility_expiries(
+    days_ahead: int = Query(3, description="Days before expiry to trigger reminder (default 3)"),
+    include_expired: bool = Query(True, description="Whether to include expired allocations for renewal grace notice"),
+    force: bool = Query(False, description="Force send even if already reminded today"),
+    cron_key: Optional[str] = Query(None, description="Secret cron key for automated schedulers"),
+    x_cron_key: Optional[str] = Header(None, alias="X-Cron-Key", description="Secret cron header for automated schedulers"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Automated background processor for Hostel & Study Room tenancy expiry reminders.
+    Sends 1 notification per day during the final 3 days (T-3, T-2, T-1) and
+    one renewal grace notice upon expiry.
+    
+    Accessible by:
+    1. cron-job.org or external scheduler with ?cron_key=... or X-Cron-Key header
+    2. Authenticated staff with Bearer JWT
+    """
+    authorized = False
+    valid_keys = {settings.SECRET_KEY}
+    if hasattr(settings, "CRON_SECRET") and settings.CRON_SECRET:
+        valid_keys.add(settings.CRON_SECRET)
+
+    if (cron_key and cron_key in valid_keys) or (x_cron_key and x_cron_key in valid_keys):
+        authorized = True
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            from app.core.security import decode_token
+            payload = decode_token(token)
+            if payload and payload.get("sub"):
+                authorized = True
+        except Exception:
+            pass
+
+    if not authorized:
+        raise BadRequestException("Unauthorized cron trigger: Invalid cron key or missing authorization")
+
+    result = await notification_dispatcher.scan_and_dispatch_facility_expiry_reminders(
+        days_ahead=days_ahead,
+        include_expired=include_expired,
+        force=force
+    )
+    return result
+

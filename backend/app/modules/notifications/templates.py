@@ -745,3 +745,315 @@ def format_facility_allocation_email(
         "subject": subject,
         "html_content": wrap_html_email(subject, body)
     }
+
+
+# -----------------------------------------------------------------------------
+# 8. Facility Tenancy Expiring Reminders (T-3, T-2, T-1 Days)
+# -----------------------------------------------------------------------------
+def format_facility_expiring_whatsapp(
+    recipient_name: str,
+    student_name: str,
+    facility_type: str,
+    unit_label: str,
+    days_remaining: int,
+    end_date_str: str,
+    monthly_renewal_charge: float
+) -> Dict[str, Any]:
+    """Meta WhatsApp Template: ycc_facility_expiring"""
+    facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
+    day_text = "TOMORROW" if days_remaining == 1 else f"in {days_remaining} days"
+
+    return {
+        "name": "ycc_facility_expiring",
+        "language": {"code": "en"},
+        "components": [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": recipient_name},
+                    {"type": "text", "text": student_name},
+                    {"type": "text", "text": f"{facility_title} ({unit_label})"},
+                    {"type": "text", "text": day_text},
+                    {"type": "text", "text": end_date_str},
+                    {"type": "text", "text": f"₹{monthly_renewal_charge:,.2f}"}
+                ]
+            }
+        ]
+    }
+
+
+def format_facility_expiring_whatsapp_text(
+    recipient_name: str,
+    student_name: str,
+    facility_type: str,
+    unit_label: str,
+    days_remaining: int,
+    end_date_str: str,
+    monthly_renewal_charge: float,
+    institute_phone: str = "+91 9428818019"
+) -> str:
+    """Formatted text message for direct WhatsApp sending / click-to-chat deep link."""
+    facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
+    urgency_tag = "⚠️ URGENT: EXPIRES TOMORROW" if days_remaining == 1 else f"⏰ EXPIRES IN {days_remaining} DAYS"
+
+    lines = [
+        f"*{urgency_tag}*",
+        f"*Yashodeep Coaching Classes - Facility Tenancy Renewal*",
+        "",
+        f"Dear *{recipient_name}*,",
+        f"This is an automated reminder that the *{facility_title}* tenancy for *{student_name}* is expiring soon.",
+        "",
+        f"📋 *Tenancy Details:*",
+        f"• Facility: *{facility_title}*",
+        f"• Assigned Unit: *{unit_label}*",
+        f"• Expiry Date: *{end_date_str}*",
+        f"• Days Remaining: *{days_remaining} Day{'s' if days_remaining > 1 else ''}*",
+        f"• Monthly Renewal Fee: *₹{monthly_renewal_charge:,.2f}*",
+        "",
+        "💡 *Important Renewal Notice:*",
+        f"To retain your assigned {unit_label.lower()} without interruption or de-allocation, please renew your tenancy at the earliest.",
+        "",
+        f"📞 *Renewal Assistance / Office:* {institute_phone}",
+        "Thank you for choosing Yashodeep Coaching Classes!"
+    ]
+    return "\n".join(lines)
+
+
+def format_facility_expiring_email(
+    student_name: str,
+    prn: str,
+    facility_type: str,
+    unit_label: str,
+    location_label: str,
+    days_remaining: int,
+    end_date_str: str,
+    monthly_renewal_charge: float,
+    portal_url: Optional[str] = None
+) -> Dict[str, str]:
+    is_study_room = facility_type == "STUDY_ROOM"
+    facility_title = "Study Room Desk" if is_study_room else "Hostel Bed"
+    urgency_subject = "Expires Tomorrow!" if days_remaining == 1 else f"Expires in {days_remaining} Days"
+
+    subject = f"Action Required: {facility_title} Tenancy for {student_name} ({unit_label}) {urgency_subject}"
+
+    urgency_badge_color = "#b45309" if days_remaining > 1 else "#b91c1c"
+    urgency_badge_bg = "#fef3c7" if days_remaining > 1 else "#fee2e2"
+    banner_text = f"Expiring in {days_remaining} Day{'s' if days_remaining > 1 else ''}" if days_remaining > 1 else "Expiring Tomorrow"
+
+    body = f"""
+    <div style="margin-bottom: 24px;">
+        <span style="background-color: {urgency_badge_bg}; color: {urgency_badge_color}; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;">
+            ⚠️ Tenancy Renewal • {banner_text}
+        </span>
+    </div>
+
+    <h2 style="color: #0f172a; margin: 0 0 12px 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">
+        {facility_title} Tenancy Expiring Soon
+    </h2>
+
+    <p style="color: #475569; font-size: 14px; margin: 0 0 20px 0; line-height: 1.6;">
+        Dear <strong>{student_name}</strong> (and Parent / Guardian),<br>
+        Your tenancy reservation for <strong>{unit_label}</strong> at Yashodeep Coaching Classes is scheduled to expire on <strong>{end_date_str}</strong> ({banner_text.lower()}).
+    </p>
+
+    <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+        Current Allocation Summary
+    </h4>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b; width: 40%;">Student Name</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">{student_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">PRN / Roll Number</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #4338ca; font-family: monospace;">{prn}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Allocated Unit</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">{unit_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">Campus Location</td>
+            <td style="padding: 10px 14px; font-weight: 600; color: #334155;">{location_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Plan Valid Until</td>
+            <td style="padding: 10px 14px; font-weight: 800; color: {urgency_badge_color};">{end_date_str} ({banner_text.lower()})</td>
+        </tr>
+        <tr style="background-color: #f1f5f9;">
+            <td style="padding: 12px 14px; font-weight: 800; color: #0f172a; font-size: 14px;">Monthly Renewal Charge</td>
+            <td style="padding: 12px 14px; font-weight: 800; color: #0369a1; font-size: 15px; text-align: right;">₹{monthly_renewal_charge:,.2f}</td>
+        </tr>
+    </table>
+
+    <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+        <h5 style="margin: 0 0 8px 0; color: #92400e; font-size: 12px; font-weight: 800; text-transform: uppercase;">
+            How to Renew Your Tenancy
+        </h5>
+        <p style="margin: 0; color: #78350f; font-size: 12px; line-height: 1.6;">
+            1. Visit the Institute Administrative Office during office hours.<br>
+            2. Choose your desired renewal extension (1, 3, 6, or 12 months).<br>
+            3. Complete fee settlement via UPI, Cash, or Bank Transfer to ensure uninterrupted occupancy.
+        </p>
+    </div>
+
+    <div style="text-align: center; margin: 24px 0 12px 0;">
+        <a href="{portal_url or 'https://yashodeepcoachingclasses.in'}" 
+           style="background-color: #d97706; color: #ffffff; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; display: inline-block; font-size: 13px;">
+            Log in to Student Portal
+        </a>
+    </div>
+    """
+
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
+    }
+
+
+# -----------------------------------------------------------------------------
+# 9. Facility Tenancy Expired Notice (Day 0 / +1 Renewal Grace)
+# -----------------------------------------------------------------------------
+def format_facility_expired_whatsapp(
+    recipient_name: str,
+    student_name: str,
+    facility_type: str,
+    unit_label: str,
+    end_date_str: str,
+    monthly_renewal_charge: float
+) -> Dict[str, Any]:
+    """Meta WhatsApp Template: ycc_facility_expired"""
+    facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
+
+    return {
+        "name": "ycc_facility_expired",
+        "language": {"code": "en"},
+        "components": [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": recipient_name},
+                    {"type": "text", "text": student_name},
+                    {"type": "text", "text": f"{facility_title} ({unit_label})"},
+                    {"type": "text", "text": end_date_str},
+                    {"type": "text", "text": f"₹{monthly_renewal_charge:,.2f}"}
+                ]
+            }
+        ]
+    }
+
+
+def format_facility_expired_whatsapp_text(
+    recipient_name: str,
+    student_name: str,
+    facility_type: str,
+    unit_label: str,
+    end_date_str: str,
+    monthly_renewal_charge: float,
+    institute_phone: str = "+91 9428818019"
+) -> str:
+    """Formatted text message for direct WhatsApp sending / click-to-chat deep link."""
+    facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
+
+    lines = [
+        "🚨 *IMPORTANT: TENANCY EXPIRED - RENEWAL PENDING*",
+        "*Yashodeep Coaching Classes*",
+        "",
+        f"Dear *{recipient_name}*,",
+        f"The *{facility_title}* tenancy for *{student_name}* ({unit_label}) expired on *{end_date_str}*.",
+        "",
+        "⏳ *Grace Period Notice:*",
+        f"Your assigned {unit_label.lower()} is currently held in a temporary grace period. To avoid immediate de-allocation and assignment to waitlisted students, please renew your tenancy today.",
+        "",
+        f"• Monthly Renewal Fee: *₹{monthly_renewal_charge:,.2f}*",
+        f"• Helpdesk / Warden Office: {institute_phone}",
+        "",
+        "Please visit the administration office or contact us immediately to retain your desk/bed."
+    ]
+    return "\n".join(lines)
+
+
+def format_facility_expired_email(
+    student_name: str,
+    prn: str,
+    facility_type: str,
+    unit_label: str,
+    location_label: str,
+    end_date_str: str,
+    monthly_renewal_charge: float,
+    portal_url: Optional[str] = None
+) -> Dict[str, str]:
+    is_study_room = facility_type == "STUDY_ROOM"
+    facility_title = "Study Room Desk" if is_study_room else "Hostel Bed"
+
+    subject = f"Notice: {facility_title} Tenancy Expired for {student_name} ({unit_label}) - Immediate Renewal Required"
+
+    body = f"""
+    <div style="margin-bottom: 24px;">
+        <span style="background-color: #fee2e2; color: #dc2626; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;">
+            🚨 Tenancy Expired • Renewal Grace Period
+        </span>
+    </div>
+
+    <h2 style="color: #0f172a; margin: 0 0 12px 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">
+        {facility_title} Tenancy Expired
+    </h2>
+
+    <p style="color: #475569; font-size: 14px; margin: 0 0 20px 0; line-height: 1.6;">
+        Dear <strong>{student_name}</strong> (and Parent / Guardian),<br>
+        Your tenancy reservation for <strong>{unit_label}</strong> at Yashodeep Coaching Classes expired on <strong>{end_date_str}</strong>.
+    </p>
+
+    <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+        Expired Tenancy Record
+    </h4>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b; width: 40%;">Student Name</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">{student_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">PRN / Roll Number</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #4338ca; font-family: monospace;">{prn}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Assigned Unit</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">{unit_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">Campus Location</td>
+            <td style="padding: 10px 14px; font-weight: 600; color: #334155;">{location_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Expired On</td>
+            <td style="padding: 10px 14px; font-weight: 800; color: #dc2626;">{end_date_str}</td>
+        </tr>
+        <tr style="background-color: #f1f5f9;">
+            <td style="padding: 12px 14px; font-weight: 800; color: #0f172a; font-size: 14px;">Renewal Rate</td>
+            <td style="padding: 12px 14px; font-weight: 800; color: #0369a1; font-size: 15px; text-align: right;">₹{monthly_renewal_charge:,.2f} / month</td>
+        </tr>
+    </table>
+
+    <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+        <h5 style="margin: 0 0 8px 0; color: #991b1b; font-size: 12px; font-weight: 800; text-transform: uppercase;">
+            Immediate Action Required
+        </h5>
+        <p style="margin: 0; color: #7f1d1d; font-size: 12px; line-height: 1.6;">
+            Your assigned unit is currently held under a short grace period. If renewal is not completed immediately, your desk/bed will be unassigned and released for waitlisted students.<br>
+            Please visit the administration office or contact the hostel warden today.
+        </p>
+    </div>
+
+    <div style="text-align: center; margin: 24px 0 12px 0;">
+        <a href="{portal_url or 'https://yashodeepcoachingclasses.in'}" 
+           style="background-color: #dc2626; color: #ffffff; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; display: inline-block; font-size: 13px;">
+            Open Student Portal
+        </a>
+    </div>
+    """
+
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
+    }
+

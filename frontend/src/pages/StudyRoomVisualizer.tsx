@@ -20,7 +20,8 @@ import {
   DollarSign,
   Calendar,
   Check,
-  Mail
+  Mail,
+  Bell
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -121,6 +122,28 @@ export const StudyRoomVisualizer: React.FC = () => {
 
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [scanningExpiries, setScanningExpiries] = useState<boolean>(false);
+
+  const triggerExpiryReminders = async () => {
+    try {
+      setScanningExpiries(true);
+      const res = await apiClient.post('/notifications/reminders/process-facility-expiries', null, {
+        params: { days_ahead: 3, include_expired: true }
+      });
+      const data = res.data;
+      setFeedbackMessage({
+        type: 'success',
+        text: `Facility Reminder Scan Complete: Processed ${data.processed_count} tenancies (${data.dispatched_count} notifications dispatched, ${data.skipped_count} skipped/already reminded today).`
+      });
+    } catch (err: any) {
+      setFeedbackMessage({
+        type: 'error',
+        text: err.response?.data?.detail || 'Failed to trigger facility expiry reminders.'
+      });
+    } finally {
+      setScanningExpiries(false);
+    }
+  };
 
   const fetchSeats = async () => {
     try {
@@ -458,6 +481,15 @@ export const StudyRoomVisualizer: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-3">
+          <button
+            onClick={triggerExpiryReminders}
+            disabled={scanningExpiries}
+            className="flex items-center space-x-2 px-3.5 py-2 text-sm font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-all shadow-sm disabled:opacity-60"
+            title="Scan upcoming (3-day) and expired desk tenancies and dispatch WhatsApp/Email reminders"
+          >
+            <Bell className={`w-4 h-4 ${scanningExpiries ? 'animate-bounce text-amber-600' : 'text-amber-600'}`} />
+            <span>{scanningExpiries ? 'Scanning Expiries...' : 'Send Expiry Reminders'}</span>
+          </button>
           <button
             onClick={fetchSeats}
             className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all"
