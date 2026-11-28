@@ -757,15 +757,17 @@ def format_facility_expiring_whatsapp(
     unit_label: str,
     days_remaining: int,
     end_date_str: str,
-    monthly_renewal_charge: float
+    monthly_renewal_charge: float,
+    language_code: str = "en_US"
 ) -> Dict[str, Any]:
     """Meta WhatsApp Template: ycc_facility_expiring"""
     facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
     day_text = "TOMORROW" if days_remaining == 1 else f"in {days_remaining} days"
 
     return {
+        "template_name": "ycc_facility_expiring",
         "name": "ycc_facility_expiring",
-        "language": {"code": "en"},
+        "language": {"code": language_code},
         "components": [
             {
                 "type": "body",
@@ -920,14 +922,16 @@ def format_facility_expired_whatsapp(
     facility_type: str,
     unit_label: str,
     end_date_str: str,
-    monthly_renewal_charge: float
+    monthly_renewal_charge: float,
+    language_code: str = "en_US"
 ) -> Dict[str, Any]:
     """Meta WhatsApp Template: ycc_facility_expired"""
     facility_title = "Study Room Desk" if facility_type == "STUDY_ROOM" else "Hostel Bed"
 
     return {
+        "template_name": "ycc_facility_expired",
         "name": "ycc_facility_expired",
-        "language": {"code": "en"},
+        "language": {"code": language_code},
         "components": [
             {
                 "type": "body",

@@ -1188,6 +1188,10 @@ class NotificationDispatcher:
                 renewal_float = float(monthly_renewal_charge)
 
                 # 1. Format WhatsApp
+                pref_lang = getattr(settings, "META_WHATSAPP_DEFAULT_LANGUAGE", "en_US") or "en_US"
+                if pref_lang not in ("en_US", "mr"):
+                    pref_lang = "en_US"
+
                 if is_expired:
                     wa_template = format_facility_expired_whatsapp(
                         recipient_name=contact_name,
@@ -1195,7 +1199,8 @@ class NotificationDispatcher:
                         facility_type=facility_type,
                         unit_label=unit_label,
                         end_date_str=end_date_str,
-                        monthly_renewal_charge=renewal_float
+                        monthly_renewal_charge=renewal_float,
+                        language_code=pref_lang
                     )
                     wa_text = format_facility_expired_whatsapp_text(
                         recipient_name=contact_name,
@@ -1213,7 +1218,8 @@ class NotificationDispatcher:
                         unit_label=unit_label,
                         days_remaining=days_remaining,
                         end_date_str=end_date_str,
-                        monthly_renewal_charge=renewal_float
+                        monthly_renewal_charge=renewal_float,
+                        language_code=pref_lang
                     )
                     wa_text = format_facility_expiring_whatsapp_text(
                         recipient_name=contact_name,
