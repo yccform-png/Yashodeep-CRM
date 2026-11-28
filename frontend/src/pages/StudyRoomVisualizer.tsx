@@ -19,7 +19,8 @@ import {
   ShieldCheck,
   DollarSign,
   Calendar,
-  Check
+  Check,
+  Mail
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -90,8 +91,19 @@ export const StudyRoomVisualizer: React.FC = () => {
   const [customDepositAmount, setCustomDepositAmount] = useState<number>(1000);
   const [collectPaymentNow, setCollectPaymentNow] = useState<boolean>(true);
   const [paymentMode, setPaymentMode] = useState<string>('CASH');
+  const [durationMonths, setDurationMonths] = useState<number>(1);
+  const [monthlyCharge, setMonthlyCharge] = useState<number>(1600);
+  const [allocationStartDate, setAllocationStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [allocationEndDate, setAllocationEndDate] = useState<string>('2027-04-30');
   const [transferTargetSeatId, setTransferTargetSeatId] = useState<string>('');
+
+  const computeEndDate = (startDateStr: string, months: number): string => {
+    const d = new Date(startDateStr);
+    if (isNaN(d.getTime())) return '';
+    d.setMonth(d.getMonth() + months);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  };
 
   // Renewal Modal State
   const [showRenewModal, setShowRenewModal] = useState<boolean>(false);
@@ -170,9 +182,22 @@ export const StudyRoomVisualizer: React.FC = () => {
       setSelectedPlanId(planId);
       const plan = plans.find((p) => p.id === planId);
       if (plan) {
-        setCustomRentAmount(plan.base_amount);
-        setCustomDepositAmount(plan.deposit_amount);
-        updateEndDateForFrequency(plan.billing_frequency);
+        let monthly = Number(plan.base_amount);
+        let mCount = 1;
+        if (plan.billing_frequency === 'QUARTERLY') {
+          monthly = Math.round(Number(plan.base_amount) / 3);
+          mCount = 3;
+        } else if (plan.billing_frequency === 'HALF_YEARLY') {
+          monthly = Math.round(Number(plan.base_amount) / 6);
+          mCount = 6;
+        } else if (plan.billing_frequency === 'YEARLY') {
+          monthly = Math.round(Number(plan.base_amount) / 12);
+          mCount = 12;
+        }
+        setMonthlyCharge(monthly);
+        setDurationMonths(mCount);
+        setCustomDepositAmount(Number(plan.deposit_amount));
+        setAllocationEndDate(computeEndDate(allocationStartDate, mCount));
       }
     }
   };
@@ -225,21 +250,26 @@ export const StudyRoomVisualizer: React.FC = () => {
     setActionLoading(true);
     setFeedbackMessage(null);
     try {
+      const months = Math.max(1, Number(durationMonths) || 1);
+      const computedEnd = allocationEndDate || computeEndDate(allocationStartDate, months);
       const payload: any = {
         student_id: selectedStudentId,
         study_seat_id: selectedSeat.id,
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: allocationEndDate,
+        start_date: allocationStartDate,
+        end_date: computedEnd,
+        duration_months: months,
+        monthly_charge: Number(monthlyCharge),
         collect_payment: collectPaymentNow,
         payment_mode: paymentMode
       };
 
       if (isCustomPricing) {
         payload.service_plan_id = null;
-        payload.custom_rent_amount = customRentAmount;
+        payload.custom_rent_amount = Number(monthlyCharge);
         payload.custom_deposit_amount = customDepositAmount;
       } else {
         payload.service_plan_id = selectedPlanId || (plans[0] ? plans[0].id : null);
+        payload.custom_deposit_amount = customDepositAmount;
       }
 
       const res = await apiClient.post('/study-rooms/allocate', payload);
@@ -860,78 +890,140 @@ export const StudyRoomVisualizer: React.FC = () => {
                 </select>
               </div>
 
-              {/* Custom Pricing Inputs (if selected) */}
-              {isCustomPricing ? (
-                <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
-                  <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-900">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Admin Custom Tariff Override</span>
+              {/* Duration in Months and Rate Calculator */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Single Month Charge (₹) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={monthlyCharge}
+                        onChange={(e) => setMonthlyCharge(Number(e.target.value) || 0)}
+                        className="w-full pl-7 pr-3 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Monthly Rate"
+                      />
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Custom Rent Fee (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        required
-                        value={customRentAmount}
-                        onChange={(e) => setCustomRentAmount(Number(e.target.value))}
-                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">Custom Deposit (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        required
-                        value={customDepositAmount}
-                        onChange={(e) => setCustomDepositAmount(Number(e.target.value))}
-                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg font-bold text-blue-700"
-                      />
-                    </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Duration (in Months) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="36"
+                      required
+                      value={durationMonths}
+                      onChange={(e) => {
+                        const m = Math.max(1, Number(e.target.value) || 1);
+                        setDurationMonths(m);
+                        setAllocationEndDate(computeEndDate(allocationStartDate, m));
+                      }}
+                      className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
                   </div>
                 </div>
-              ) : (
-                /* Standard Plan Financial Breakdown */
-                (() => {
+
+                {/* Quick Month Preset Pills */}
+                <div>
+                  <span className="block text-[11px] font-medium text-slate-500 mb-1.5">Quick Presets:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: '1 Mo', count: 1 },
+                      { label: '3 Mo (Quarter)', count: 3 },
+                      { label: '6 Mo (Half Year)', count: 6 },
+                      { label: '10 Mo (Academic)', count: 10 },
+                      { label: '12 Mo (Full Year)', count: 12 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.count}
+                        type="button"
+                        onClick={() => {
+                          setDurationMonths(preset.count);
+                          setAllocationEndDate(computeEndDate(allocationStartDate, preset.count));
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                          durationMonths === preset.count
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dates Selection */}
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/80">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={allocationStartDate}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        setAllocationStartDate(newStart);
+                        setAllocationEndDate(computeEndDate(newStart, durationMonths));
+                      }}
+                      className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">End Date (Auto)</label>
+                    <input
+                      type="date"
+                      required
+                      value={allocationEndDate}
+                      onChange={(e) => setAllocationEndDate(e.target.value)}
+                      className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Dynamic Financial Summary Card */}
+                {(() => {
                   const currentPlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
-                  if (!currentPlan) return null;
+                  const depositAmt = isCustomPricing ? customDepositAmount : (currentPlan ? Number(currentPlan.deposit_amount) : 0);
+                  const totalRent = (Number(monthlyCharge) || 0) * (Number(durationMonths) || 1);
+                  const totalInitialDue = totalRent + depositAmt;
+
                   return (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1.5 text-xs">
                       <div className="flex justify-between text-slate-600">
-                        <span>Subscription Tariff ({currentPlan.billing_frequency.replace('_', ' ')}):</span>
-                        <span className="font-bold text-slate-900">₹{Number(currentPlan.base_amount).toLocaleString('en-IN')}</span>
+                        <span>Facility Rent ({durationMonths} Month{durationMonths > 1 ? 's' : ''} @ ₹{Number(monthlyCharge).toLocaleString('en-IN')}/mo):</span>
+                        <span className="font-bold text-slate-900">₹{totalRent.toLocaleString('en-IN')}</span>
                       </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span className="flex items-center space-x-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Key & Locker Deposit (Refundable):</span>
-                        </span>
-                        <span className="font-bold text-blue-700">₹{Number(currentPlan.deposit_amount).toLocaleString('en-IN')}</span>
-                      </div>
+                      {depositAmt > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                          <span className="flex items-center space-x-1">
+                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Key &amp; Locker Deposit (Refundable):</span>
+                          </span>
+                          <span className="font-bold text-blue-700">₹{depositAmt.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-1.5 border-t border-slate-200 font-bold text-sm text-slate-900">
-                        <span>Total Due Initial Invoice:</span>
-                        <span className="text-emerald-700">
-                          ₹{(Number(currentPlan.base_amount) + Number(currentPlan.deposit_amount)).toLocaleString('en-IN')}
-                        </span>
+                        <span>Total Initial Invoice:</span>
+                        <span className="text-emerald-700">₹{totalInitialDue.toLocaleString('en-IN')}</span>
                       </div>
                     </div>
                   );
-                })()
-              )}
+                })()}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Valid Until Date *</label>
-                <input
-                  type="date"
-                  required
-                  value={allocationEndDate}
-                  onChange={(e) => setAllocationEndDate(e.target.value)}
-                  className="w-full p-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                />
+                <div className="flex items-center space-x-1.5 text-[11px] font-medium text-blue-700 bg-blue-50/70 p-2 rounded-lg border border-blue-100">
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                  <span>Confirmation email with tenancy details, invoice reference &amp; rules will be automatically sent to student &amp; parent.</span>
+                </div>
               </div>
 
               {/* Payment Collection Toggle */}

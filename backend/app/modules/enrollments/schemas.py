@@ -56,8 +56,12 @@ class AdmissionWizardRequest(BaseModel):
     # Step 3: Optional Facilities & Services
     hostel_plan_id: Optional[uuid.UUID] = None
     hostel_bed_id: Optional[uuid.UUID] = None
+    hostel_months: Optional[int] = 1
+    hostel_monthly_charge: Optional[Decimal] = None
     study_room_plan_id: Optional[uuid.UUID] = None
     study_seat_id: Optional[uuid.UUID] = None
+    study_room_months: Optional[int] = 1
+    study_room_monthly_charge: Optional[Decimal] = None
 
     # Step 4: Fees, Discounts & Billing
     discount_amount: Decimal = Decimal("0.00")

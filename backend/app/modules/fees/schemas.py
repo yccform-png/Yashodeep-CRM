@@ -17,7 +17,11 @@ class FeePreviewRequest(BaseModel):
     subject_group_id: Optional[uuid.UUID] = None
     selected_subject_ids: Optional[List[uuid.UUID]] = []
     hostel_plan_id: Optional[uuid.UUID] = None
+    hostel_months: Optional[int] = 1
+    hostel_monthly_charge: Optional[Decimal] = None
     study_room_plan_id: Optional[uuid.UUID] = None
+    study_room_months: Optional[int] = 1
+    study_room_monthly_charge: Optional[Decimal] = None
     discount_amount: Decimal = Decimal("0.00")
     number_of_installments: int = 1
     custom_installments: Optional[List[CustomInstallmentInput]] = None

@@ -1,6 +1,8 @@
 import uuid
+import asyncio
 from typing import List, Optional
 from datetime import date, datetime, timezone, timedelta
+from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +32,7 @@ from app.modules.services.service_billing import (
     create_facility_renewal_invoice,
     get_or_create_custom_plan
 )
+from app.modules.notifications.service import notification_dispatcher
 
 router = APIRouter(prefix="/hostels", tags=["Hostel"])
 
@@ -154,36 +157,65 @@ async def allocate_bed(
     if not student:
         raise NotFoundException("Student not found")
 
-    bed_stmt = select(HostelBed).where(HostelBed.id == data.hostel_bed_id).with_for_update()
+    bed_stmt = (
+        select(HostelBed)
+        .options(
+            selectinload(HostelBed.room)
+            .selectinload(HostelRoom.floor)
+            .selectinload(HostelFloor.building)
+        )
+        .where(HostelBed.id == data.hostel_bed_id)
+        .with_for_update()
+    )
     bed = (await db.execute(bed_stmt)).scalar_one_or_none()
     if not bed or bed.status != "AVAILABLE":
         raise ConflictException("Selected bed is not available")
 
     # 1. Determine Pricing Model & Permissions
+    months = max(1, data.duration_months if data.duration_months and data.duration_months > 0 else 1)
+
     if data.service_plan_id:
         plan = await db.get(ServicePlan, data.service_plan_id)
         if not plan:
             raise NotFoundException("Selected hostel service plan not found")
-        rent_amount = plan.base_amount
+        if data.monthly_charge is not None and data.monthly_charge >= Decimal("0.00"):
+            single_month_rate = data.monthly_charge
+        elif plan.billing_frequency == "MONTHLY":
+            single_month_rate = plan.base_amount
+        elif plan.billing_frequency == "QUARTERLY":
+            single_month_rate = plan.base_amount / Decimal("3.00")
+        elif plan.billing_frequency == "YEARLY":
+            single_month_rate = plan.base_amount / Decimal("12.00")
+        else:
+            single_month_rate = plan.base_amount
+
+        rent_amount = single_month_rate * Decimal(months)
         deposit_amount = data.deposit_amount if data.deposit_amount is not None else plan.deposit_amount
-        frequency = plan.billing_frequency
-        item_desc = f"Hostel Bed {bed.bed_number} ({plan.name})"
+        frequency = "MONTHLY" if months != 12 else plan.billing_frequency
+        item_desc = f"Hostel Bed {bed.bed_number} ({plan.name} - {months} Month{'s' if months > 1 else ''} @ ₹{single_month_rate:,.2f}/mo)"
     else:
         # Custom Pricing requires Super Admin or Admin authorization
         if current_user.user_type not in ["SUPER_ADMIN", "ADMIN"]:
             raise ForbiddenException("Custom pricing requires Super Admin or Admin authorization.")
         plan = await get_or_create_custom_plan(db, "HOSTEL")
-        rent_amount = data.custom_rent_amount or Decimal("0.00")
+        single_month_rate = data.monthly_charge if data.monthly_charge is not None else (data.custom_rent_amount or Decimal("0.00"))
+        rent_amount = single_month_rate * Decimal(months)
         deposit_amount = data.deposit_amount or Decimal("0.00")
-        frequency = "ONE_TIME"
-        item_desc = f"Hostel Bed {bed.bed_number} (Custom Agreement)"
+        frequency = "MONTHLY"
+        item_desc = f"Hostel Bed {bed.bed_number} ({months} Month{'s' if months > 1 else ''} Custom Agreement @ ₹{single_month_rate:,.2f}/mo)"
+
+    start_date = data.start_date or date.today()
+    if data.end_date:
+        end_date = data.end_date
+    else:
+        end_date = start_date + relativedelta(months=months) - timedelta(days=1)
 
     # 2. Create Active Student Service
     hostel_sub = StudentService(
         student_id=student.id,
         service_plan_id=plan.id,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=start_date,
+        end_date=end_date,
         billing_frequency=frequency,
         unit_price=rent_amount,
         deposit_amount=deposit_amount,
@@ -198,8 +230,8 @@ async def allocate_bed(
         hostel_bed_id=bed.id,
         student_id=student.id,
         student_service_id=hostel_sub.id,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=start_date,
+        end_date=end_date,
         check_in_date=date.today(),
         deposit_amount=deposit_amount,
         status="ACTIVE",
@@ -228,6 +260,30 @@ async def allocate_bed(
     await cache_service.delete(CacheKeys.dashboard_metrics())
     if alloc.student_id:
         await cache_service.delete(CacheKeys.student_profile(alloc.student_id))
+
+    # 5. Dispatch confirmation email asynchronously to Student & Parents
+    building_name = (
+        bed.room.floor.building.name
+        if (bed.room and bed.room.floor and bed.room.floor.building)
+        else "Main Hostel"
+    )
+    room_label = f"Room {bed.room.room_number}" if bed.room else ""
+    asyncio.create_task(
+        notification_dispatcher.dispatch_facility_allocation_welcome(
+            student_id=student.id,
+            facility_type="HOSTEL",
+            unit_label=f"Bed #{bed.bed_number} ({room_label})",
+            location_label=f"{building_name} ({room_label})",
+            duration_months=months,
+            start_date=start_date,
+            end_date=end_date,
+            monthly_charge=single_month_rate,
+            total_rent=rent_amount,
+            deposit_amount=deposit_amount,
+            invoice_number=invoice.invoice_number,
+            payment_status=invoice.status
+        )
+    )
     return {
         "message": f"Bed {bed.bed_number} allocated successfully to student {student.student_code}",
         "allocation_id": str(alloc.id),

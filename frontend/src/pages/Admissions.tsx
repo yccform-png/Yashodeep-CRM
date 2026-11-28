@@ -95,8 +95,12 @@ const initialFormData = {
   // Facility Subscriptions
   hostel_plan_id: '',
   hostel_bed_id: '',
+  hostel_months: 1,
+  hostel_monthly_charge: 0,
   study_room_plan_id: '',
   study_seat_id: '',
+  study_room_months: 1,
+  study_room_monthly_charge: 0,
 
   // Fee & Installments
   discount_amount: 0,
@@ -353,7 +357,11 @@ export const Admissions: React.FC = () => {
         subject_group_id: formData.subject_group_id || undefined,
         selected_subject_ids: formData.selected_subject_ids,
         hostel_plan_id: formData.hostel_plan_id || undefined,
+        hostel_months: formData.hostel_plan_id ? (Number(formData.hostel_months) || 1) : undefined,
+        hostel_monthly_charge: formData.hostel_plan_id && formData.hostel_monthly_charge ? Number(formData.hostel_monthly_charge) : undefined,
         study_room_plan_id: formData.study_room_plan_id || undefined,
+        study_room_months: formData.study_room_plan_id ? (Number(formData.study_room_months) || 1) : undefined,
+        study_room_monthly_charge: formData.study_room_plan_id && formData.study_room_monthly_charge ? Number(formData.study_room_monthly_charge) : undefined,
         discount_amount: formData.discount_amount,
         number_of_installments: formData.number_of_installments,
         custom_installments: payloadInstallments,
@@ -390,7 +398,17 @@ export const Admissions: React.FC = () => {
     if (step === 4) {
       fetchFeePreview();
     }
-  }, [formData.number_of_installments, formData.discount_amount, formData.admission_type]);
+  }, [
+    formData.number_of_installments,
+    formData.discount_amount,
+    formData.admission_type,
+    formData.study_room_plan_id,
+    formData.study_room_months,
+    formData.study_room_monthly_charge,
+    formData.hostel_plan_id,
+    formData.hostel_months,
+    formData.hostel_monthly_charge
+  ]);
 
   const clearFieldError = (name: string) => {
     setFieldErrors((prev) => {
@@ -722,8 +740,12 @@ export const Admissions: React.FC = () => {
         batch_id: formData.batch_id || undefined,
         hostel_plan_id: formData.hostel_plan_id || undefined,
         hostel_bed_id: formData.hostel_bed_id || undefined,
+        hostel_months: formData.hostel_plan_id ? (Number(formData.hostel_months) || 1) : undefined,
+        hostel_monthly_charge: formData.hostel_plan_id && formData.hostel_monthly_charge ? Number(formData.hostel_monthly_charge) : undefined,
         study_room_plan_id: formData.study_room_plan_id || undefined,
         study_seat_id: formData.study_seat_id || undefined,
+        study_room_months: formData.study_room_plan_id ? (Number(formData.study_room_months) || 1) : undefined,
+        study_room_monthly_charge: formData.study_room_plan_id && formData.study_room_monthly_charge ? Number(formData.study_room_monthly_charge) : undefined,
         discount_amount: formData.discount_amount || 0,
         number_of_installments: formData.number_of_installments || 1,
         custom_installments: formData.number_of_installments > 1 && formData.custom_installments?.length === formData.number_of_installments
@@ -2816,7 +2838,15 @@ export const Admissions: React.FC = () => {
                   <select
                     value={formData.study_room_plan_id}
                     onChange={(e) => {
-                      setFormData({ ...formData, study_room_plan_id: e.target.value, study_seat_id: '' });
+                      const pid = e.target.value;
+                      const plan = studyRoomPlans.find((p) => p.id === pid);
+                      setFormData({
+                        ...formData,
+                        study_room_plan_id: pid,
+                        study_seat_id: '',
+                        study_room_months: formData.study_room_months || 1,
+                        study_room_monthly_charge: plan ? Number(plan.base_amount) : 0
+                      });
                       clearFieldError('study_seat_id');
                       clearFieldError('service_selection');
                     }}
@@ -2828,6 +2858,99 @@ export const Admissions: React.FC = () => {
                     ))}
                   </select>
                 </div>
+
+                {formData.study_room_plan_id && (() => {
+                  const currentPlan = studyRoomPlans.find((p) => p.id === formData.study_room_plan_id);
+                  const months = Math.max(1, Number(formData.study_room_months) || 1);
+                  const rate = formData.study_room_monthly_charge !== undefined && formData.study_room_monthly_charge !== null
+                    ? Number(formData.study_room_monthly_charge)
+                    : Number(currentPlan?.base_amount || 0);
+                  const deposit = Number(currentPlan?.deposit_amount || 0);
+                  const totalTariff = rate * months;
+                  const totalPayable = totalTariff + deposit;
+
+                  return (
+                    <div className="p-3 bg-white/90 border border-purple-200 rounded-xl space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between border-b border-purple-100 pb-2">
+                        <span className="font-semibold text-slate-700 flex items-center space-x-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Tenure Duration (Months)</span>
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          {[1, 3, 6, 10, 12].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, study_room_months: m })}
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                                months === m
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {m}M
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="36"
+                            value={formData.study_room_months || 1}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                study_room_months: Math.max(1, parseInt(e.target.value) || 1),
+                              })
+                            }
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Monthly Tariff Rate (₹/mo)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.study_room_monthly_charge ?? (currentPlan ? Number(currentPlan.base_amount) : 0)}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                study_room_monthly_charge: Math.max(0, parseFloat(e.target.value) || 0),
+                              })
+                            }
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-purple-50/70 rounded-lg border border-purple-100 space-y-1 text-[11px]">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Tenure Tariff: ₹{rate.toLocaleString('en-IN')} × {months} {months === 1 ? 'month' : 'months'}</span>
+                          <span className="font-bold text-slate-900">₹{totalTariff.toLocaleString('en-IN')}</span>
+                        </div>
+                        {deposit > 0 && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>Refundable Locker Deposit:</span>
+                            <span className="font-bold text-blue-700">₹{deposit.toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between pt-1 border-t border-purple-200 font-bold text-slate-900">
+                          <span>Study Room Total Fee:</span>
+                          <span className="text-purple-700">₹{totalPayable.toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {formData.study_room_plan_id && (
                   <div className="space-y-3">
@@ -2944,7 +3067,15 @@ export const Admissions: React.FC = () => {
                   <select
                     value={formData.hostel_plan_id}
                     onChange={(e) => {
-                      setFormData({ ...formData, hostel_plan_id: e.target.value, hostel_bed_id: '' });
+                      const pid = e.target.value;
+                      const plan = hostelPlans.find((p) => p.id === pid);
+                      setFormData({
+                        ...formData,
+                        hostel_plan_id: pid,
+                        hostel_bed_id: '',
+                        hostel_months: formData.hostel_months || 1,
+                        hostel_monthly_charge: plan ? Number(plan.base_amount) : 0
+                      });
                       clearFieldError('hostel_bed_id');
                       clearFieldError('service_selection');
                     }}
@@ -2956,6 +3087,99 @@ export const Admissions: React.FC = () => {
                     ))}
                   </select>
                 </div>
+
+                {formData.hostel_plan_id && (() => {
+                  const currentPlan = hostelPlans.find((p) => p.id === formData.hostel_plan_id);
+                  const months = Math.max(1, Number(formData.hostel_months) || 1);
+                  const rate = formData.hostel_monthly_charge !== undefined && formData.hostel_monthly_charge !== null
+                    ? Number(formData.hostel_monthly_charge)
+                    : Number(currentPlan?.base_amount || 0);
+                  const deposit = Number(currentPlan?.deposit_amount || 0);
+                  const totalTariff = rate * months;
+                  const totalPayable = totalTariff + deposit;
+
+                  return (
+                    <div className="p-3 bg-white/90 border border-blue-200 rounded-xl space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                        <span className="font-semibold text-slate-700 flex items-center space-x-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Tenure Duration (Months)</span>
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          {[1, 3, 6, 10, 12].map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setFormData({ ...formData, hostel_months: m })}
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                                months === m
+                                  ? 'bg-blue-600 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {m}M
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Duration (Months)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="36"
+                            value={formData.hostel_months || 1}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                hostel_months: Math.max(1, parseInt(e.target.value) || 1),
+                              })
+                            }
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                            Monthly Boarding Rate (₹/mo)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.hostel_monthly_charge ?? (currentPlan ? Number(currentPlan.base_amount) : 0)}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                hostel_monthly_charge: Math.max(0, parseFloat(e.target.value) || 0),
+                              })
+                            }
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-blue-50/70 rounded-lg border border-blue-100 space-y-1 text-[11px]">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Boarding Tariff: ₹{rate.toLocaleString('en-IN')} × {months} {months === 1 ? 'month' : 'months'}</span>
+                          <span className="font-bold text-slate-900">₹{totalTariff.toLocaleString('en-IN')}</span>
+                        </div>
+                        {deposit > 0 && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>Refundable Security Deposit:</span>
+                            <span className="font-bold text-blue-700">₹{deposit.toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between pt-1 border-t border-blue-200 font-bold text-slate-900">
+                          <span>Hostel Total Fee:</span>
+                          <span className="text-blue-700">₹{totalPayable.toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {formData.hostel_plan_id && (
                   <div className="space-y-3">

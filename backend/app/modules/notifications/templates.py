@@ -604,3 +604,144 @@ def format_promotion_confirmation_email(
         "subject": subject,
         "html_content": wrap_html_email(subject, body)
     }
+
+
+# -----------------------------------------------------------------------------
+# 7. Facility Allocation Email (Study Room & Hostel)
+# -----------------------------------------------------------------------------
+def format_facility_allocation_email(
+    student_name: str,
+    prn: str,
+    facility_type: str,  # "STUDY_ROOM" or "HOSTEL"
+    unit_label: str,     # "Study Desk B-012" or "Hostel Bed B2"
+    location_label: str, # "Main Reading Hall - Floor 1" or "Main Boys Hostel - Room 204"
+    duration_months: int,
+    start_date_str: str,
+    end_date_str: str,
+    monthly_charge: float,
+    total_rent: float,
+    deposit_amount: float,
+    total_invoiced: float,
+    invoice_number: str,
+    payment_status: str,
+    portal_url: Optional[str] = None
+) -> Dict[str, str]:
+    is_study_room = facility_type == "STUDY_ROOM"
+    facility_title = "Study Room Desk" if is_study_room else "Hostel Bed"
+    badge_color = "#0284c7" if is_study_room else "#4f46e5"
+
+    subject = f"Yashodeep Coaching Classes - {facility_title} Allocation Confirmed ({unit_label})"
+
+    pay_badge = (
+        '<span style="background-color: #dcfce7; color: #15803d; padding: 4px 10px; border-radius: 9999px; font-weight: 700; font-size: 11px;">PAID / CONFIRMED</span>'
+        if payment_status == "PAID"
+        else '<span style="background-color: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 9999px; font-weight: 700; font-size: 11px;">PAYMENT PENDING</span>'
+    )
+
+    guidelines = """
+        <li style="margin-bottom: 6px;"><strong>Operational Timings:</strong> 6:00 AM – 10:30 PM (Mon to Sun).</li>
+        <li style="margin-bottom: 6px;"><strong>Silence Protocol:</strong> Strictly maintain pin-drop silence in the reading hall. Phone calls strictly prohibited inside.</li>
+        <li style="margin-bottom: 6px;"><strong>Desk Usage:</strong> Occupy only your assigned desk number. Do not exchange or swap without written approval.</li>
+        <li style="margin-bottom: 6px;"><strong>Locker Key:</strong> Keep your locker key secure. Refundable deposit returned upon vacating desk.</li>
+    """ if is_study_room else """
+        <li style="margin-bottom: 6px;"><strong>Curfew & Gate Timings:</strong> Hostel gates close at 9:00 PM sharp. Late entry requires prior warden permission.</li>
+        <li style="margin-bottom: 6px;"><strong>Mess Schedule:</strong> Breakfast (7:30 - 9:00 AM), Lunch (12:30 - 2:00 PM), Dinner (7:30 - 9:00 PM).</li>
+        <li style="margin-bottom: 6px;"><strong>Cleanliness:</strong> Maintain room hygiene. Electrical heating coils or induction cooktops prohibited.</li>
+        <li style="margin-bottom: 6px;"><strong>Caution Deposit:</strong> Caution deposit refunded on checkout after room inventory inspection.</li>
+    """
+
+    body = f"""
+    <div style="margin-bottom: 24px;">
+        <span style="background-color: #e0f2fe; color: {badge_color}; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;">
+            {facility_title} Allocated
+        </span>
+    </div>
+
+    <h2 style="color: #0f172a; margin: 0 0 12px 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">
+        {facility_title} Allocation Confirmation
+    </h2>
+
+    <p style="color: #475569; font-size: 14px; margin: 0 0 20px 0; line-height: 1.6;">
+        Dear <strong>{student_name}</strong> (and Parent / Guardian),<br>
+        We are pleased to confirm your tenancy reservation for <strong>{unit_label}</strong> at Yashodeep Coaching Classes.
+    </p>
+
+    <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+        Allocation &amp; Tenancy Details
+    </h4>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b; width: 40%;">Student Name</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">{student_name}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">PRN / Roll Number</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #4338ca; font-family: monospace;">{prn}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Allocated Unit</td>
+            <td style="padding: 10px 14px; font-weight: 800; color: #0f172a;">{unit_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">Facility Location</td>
+            <td style="padding: 10px 14px; color: #334155;">{location_label}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Tenancy Period</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a;">
+                {duration_months} Month{'s' if duration_months > 1 else ''} ({start_date_str} to {end_date_str})
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 10px 14px; color: #64748b;">Invoice Reference</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a; font-family: monospace;">{invoice_number}</td>
+        </tr>
+    </table>
+
+    <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+        Financial Breakdown
+    </h4>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Single Month Charge</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a; text-align: right;">₹{monthly_charge:,.2f} / month</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #f8fafc;">
+            <td style="padding: 10px 14px; color: #64748b;">Duration Rate ({duration_months} Months)</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0f172a; text-align: right;">₹{total_rent:,.2f}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 14px; color: #64748b;">Security / Caution Deposit (Refundable)</td>
+            <td style="padding: 10px 14px; font-weight: 700; color: #0369a1; text-align: right;">₹{deposit_amount:,.2f}</td>
+        </tr>
+        <tr style="background-color: #f1f5f9;">
+            <td style="padding: 12px 14px; font-weight: 800; color: #0f172a; font-size: 14px;">Total Billed Amount</td>
+            <td style="padding: 12px 14px; font-weight: 800; color: #15803d; font-size: 15px; text-align: right;">₹{total_invoiced:,.2f}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px 14px; color: #64748b;">Payment Status</td>
+            <td style="padding: 10px 14px; text-align: right;">{pay_badge}</td>
+        </tr>
+    </table>
+
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+        <h5 style="margin: 0 0 8px 0; color: #1e293b; font-size: 12px; font-weight: 800; text-transform: uppercase;">
+            Facility Rules &amp; Protocols
+        </h5>
+        <ul style="margin: 0; padding-left: 18px; color: #475569; font-size: 12px; line-height: 1.6;">
+            {guidelines}
+        </ul>
+    </div>
+
+    <div style="text-align: center; margin: 24px 0 12px 0;">
+        <a href="{portal_url or 'https://yashodeepcoachingclasses.in'}" 
+           style="background-color: #0284c7; color: #ffffff; padding: 12px 28px; border-radius: 10px; font-weight: 700; text-decoration: none; display: inline-block; font-size: 13px;">
+            View Tenancy &amp; Download Invoice
+        </a>
+    </div>
+    """
+
+    return {
+        "subject": subject,
+        "html_content": wrap_html_email(subject, body)
+    }

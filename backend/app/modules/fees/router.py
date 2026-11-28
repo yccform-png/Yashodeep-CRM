@@ -98,14 +98,30 @@ async def preview_fee(
     if data.hostel_plan_id:
         hp = await db.get(ServicePlan, data.hostel_plan_id)
         if hp:
-            hostel_plan = {"name": hp.name, "base_amount": hp.base_amount, "deposit_amount": hp.deposit_amount}
+            h_months = max(1, data.hostel_months or 1)
+            h_monthly = data.hostel_monthly_charge if (data.hostel_monthly_charge is not None and data.hostel_monthly_charge >= Decimal("0.00")) else hp.base_amount
+            hostel_plan = {
+                "name": hp.name,
+                "base_amount": h_monthly * Decimal(h_months),
+                "monthly_charge": h_monthly,
+                "months": h_months,
+                "deposit_amount": hp.deposit_amount
+            }
 
     # Resolve study room plan
     sr_plan = None
     if data.study_room_plan_id:
         srp = await db.get(ServicePlan, data.study_room_plan_id)
         if srp:
-            sr_plan = {"name": srp.name, "base_amount": srp.base_amount, "deposit_amount": srp.deposit_amount}
+            sr_months = max(1, data.study_room_months or 1)
+            sr_monthly = data.study_room_monthly_charge if (data.study_room_monthly_charge is not None and data.study_room_monthly_charge >= Decimal("0.00")) else srp.base_amount
+            sr_plan = {
+                "name": srp.name,
+                "base_amount": sr_monthly * Decimal(sr_months),
+                "monthly_charge": sr_monthly,
+                "months": sr_months,
+                "deposit_amount": srp.deposit_amount
+            }
 
     # Check if one-time admission form fee applies for new learning course enrollments
     admission_fee = Decimal("0.00")

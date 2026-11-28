@@ -165,11 +165,17 @@ class PricingEngine:
             h_base = Decimal(str(hostel_plan.get("base_amount", 0.00)))
             h_dep = Decimal(str(hostel_plan.get("deposit_amount", 0.00)))
             h_name = hostel_plan.get("name", "Hostel Boarding Plan")
+            h_months = hostel_plan.get("months")
+            h_monthly = hostel_plan.get("monthly_charge")
+
+            h_desc = f"Hostel Facility: {h_name}"
+            if h_months and h_monthly:
+                h_desc = f"Hostel Facility: {h_name} ({h_months} Month{'s' if h_months > 1 else ''} @ ₹{Decimal(str(h_monthly)):,.2f}/mo)"
 
             if h_base > Decimal("0.00"):
                 items.append(
                     FeeItemCalculation(
-                        description=f"Hostel Facility: {h_name}",
+                        description=h_desc,
                         service_type="HOSTEL",
                         unit_price=cls.round_currency(h_base),
                         quantity=1,
@@ -195,11 +201,17 @@ class PricingEngine:
             sr_base = Decimal(str(study_room_plan.get("base_amount", 0.00)))
             sr_dep = Decimal(str(study_room_plan.get("deposit_amount", 0.00)))
             sr_name = study_room_plan.get("name", "Study Room Facility")
+            sr_months = study_room_plan.get("months")
+            sr_monthly = study_room_plan.get("monthly_charge")
+
+            sr_desc = f"Study Room Seat: {sr_name}"
+            if sr_months and sr_monthly:
+                sr_desc = f"Study Room Seat: {sr_name} ({sr_months} Month{'s' if sr_months > 1 else ''} @ ₹{Decimal(str(sr_monthly)):,.2f}/mo)"
 
             if sr_base > Decimal("0.00"):
                 items.append(
                     FeeItemCalculation(
-                        description=f"Study Room Seat: {sr_name}",
+                        description=sr_desc,
                         service_type="STUDY_ROOM",
                         unit_price=cls.round_currency(sr_base),
                         quantity=1,

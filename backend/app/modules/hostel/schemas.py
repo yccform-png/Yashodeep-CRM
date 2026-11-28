@@ -76,7 +76,9 @@ class BedAllocationRequest(BaseModel):
     hostel_bed_id: uuid.UUID
     student_id: uuid.UUID
     start_date: date
-    end_date: date
+    end_date: Optional[date] = None
+    duration_months: int = 1
+    monthly_charge: Optional[Decimal] = None
     service_plan_id: Optional[uuid.UUID] = None
     custom_rent_amount: Optional[Decimal] = None
     deposit_amount: Decimal = Decimal("5000.00")

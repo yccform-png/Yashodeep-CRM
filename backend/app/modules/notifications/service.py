@@ -33,6 +33,7 @@ from app.modules.notifications.templates import (
     format_admission_welcome_whatsapp,
     format_promotion_confirmation_whatsapp,
     format_promotion_confirmation_email,
+    format_facility_allocation_email,
     wrap_html_email
 )
 
@@ -1051,6 +1052,91 @@ class NotificationDispatcher:
 
             except Exception as e:
                 logger.error(f"Error in dispatch_promotion_confirmation: {e}", exc_info=True)
+
+    # -------------------------------------------------------------------------
+    # 7. FACILITY TENANCY ALLOCATION WELCOME (STUDY ROOM & HOSTEL)
+    # -------------------------------------------------------------------------
+    async def dispatch_facility_allocation_welcome(
+        self,
+        student_id: uuid.UUID,
+        facility_type: str,  # "STUDY_ROOM" or "HOSTEL"
+        unit_label: str,     # "Study Desk B-012" or "Hostel Bed B2"
+        location_label: str, # "Main Reading Hall - Floor 1" or "Main Boys Hostel - Room 204"
+        duration_months: int,
+        start_date: date,
+        end_date: date,
+        monthly_charge: Decimal,
+        total_rent: Decimal,
+        deposit_amount: Decimal,
+        invoice_number: str,
+        payment_status: str
+    ):
+        """Dispatches facility booking confirmation emails to both student and parents."""
+        async with AsyncSessionLocal() as db:
+            try:
+                query = (
+                    select(Student)
+                    .options(
+                        selectinload(Student.guardians)
+                        .selectinload(StudentGuardian.guardian)
+                    )
+                    .where(Student.id == student_id)
+                )
+                student = (await db.execute(query)).scalar_one_or_none()
+                if not student:
+                    return
+
+                student_name = f"{student.first_name} {student.last_name}".strip()
+                prn = student.prn or student.student_code or "PRN-PENDING"
+
+                parent_name, parent_phone, parent_email = self._resolve_contact(student)
+
+                emails_to_send = []
+                if parent_email:
+                    emails_to_send.append((parent_email, parent_name or "Parent / Guardian"))
+                if student.email and (not parent_email or student.email.lower() != parent_email.lower()):
+                    emails_to_send.append((student.email, student_name))
+
+                email_payload = format_facility_allocation_email(
+                    student_name=student_name,
+                    prn=prn,
+                    facility_type=facility_type,
+                    unit_label=unit_label,
+                    location_label=location_label,
+                    duration_months=duration_months,
+                    start_date_str=start_date.strftime("%d-%b-%Y"),
+                    end_date_str=end_date.strftime("%d-%b-%Y"),
+                    monthly_charge=float(monthly_charge),
+                    total_rent=float(total_rent),
+                    deposit_amount=float(deposit_amount),
+                    total_invoiced=float(total_rent + deposit_amount),
+                    invoice_number=invoice_number,
+                    payment_status=payment_status
+                )
+
+                for target_email, target_name in emails_to_send:
+                    outbox = await self._log_outbox(
+                        db,
+                        event_type="FACILITY_ALLOCATED",
+                        recipient_target=target_email,
+                        channel="EMAIL",
+                        payload={"subject": email_payload["subject"]}
+                    )
+                    try:
+                        await brevo_email_client.send_transactional_email(
+                            to_email=target_email,
+                            to_name=target_name,
+                            subject=email_payload["subject"],
+                            html_content=email_payload["html_content"]
+                        )
+                        await self._update_outbox_result(db, outbox.id, "SENT")
+                        logger.info(f"Facility confirmation email sent to {target_email} for {student_name}")
+                    except Exception as exc:
+                        logger.error(f"Failed to dispatch facility email to {target_email}: {exc}")
+                        await self._update_outbox_result(db, outbox.id, "FAILED", str(exc))
+
+            except Exception as e:
+                logger.error(f"Error in dispatch_facility_allocation_welcome: {e}", exc_info=True)
 
 
 notification_dispatcher = NotificationDispatcher()

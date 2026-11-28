@@ -1,6 +1,8 @@
 import uuid
+import asyncio
 from typing import List, Optional
 from datetime import date, datetime, timezone, timedelta
+from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,7 @@ from app.modules.services.service_billing import (
     create_facility_renewal_invoice,
     get_or_create_custom_plan
 )
+from app.modules.notifications.service import notification_dispatcher
 
 router = APIRouter(prefix="/study-rooms", tags=["Study Room"])
 
@@ -127,8 +130,13 @@ async def allocate_seat(
     if not student:
         raise NotFoundException("Student not found")
 
-    # Select for update row lock to prevent double allocation
-    seat_stmt = select(StudySeat).where(StudySeat.id == data.study_seat_id).with_for_update()
+    # Select for update row lock to prevent double allocation with room details
+    seat_stmt = (
+        select(StudySeat)
+        .options(selectinload(StudySeat.study_room))
+        .where(StudySeat.id == data.study_seat_id)
+        .with_for_update()
+    )
     seat = (await db.execute(seat_stmt)).scalar_one_or_none()
     if not seat or seat.status != "AVAILABLE":
         raise ConflictException(f"Seat {seat.seat_number if seat else ''} is not available")
@@ -141,30 +149,51 @@ async def allocate_seat(
         raise BadRequestException(f"Seat {seat.seat_number} is reserved for GIRLS")
 
     # 1. Determine Pricing Model & Permissions
+    months = max(1, data.duration_months if data.duration_months and data.duration_months > 0 else 1)
+
     if data.service_plan_id:
         plan = await db.get(ServicePlan, data.service_plan_id)
         if not plan:
             raise NotFoundException("Selected study room service plan not found")
-        rent_amount = plan.base_amount
+        # Compute single month rate based on plan billing frequency
+        if data.monthly_charge is not None and data.monthly_charge >= Decimal("0.00"):
+            single_month_rate = data.monthly_charge
+        elif plan.billing_frequency == "MONTHLY":
+            single_month_rate = plan.base_amount
+        elif plan.billing_frequency == "QUARTERLY":
+            single_month_rate = plan.base_amount / Decimal("3.00")
+        elif plan.billing_frequency == "YEARLY":
+            single_month_rate = plan.base_amount / Decimal("12.00")
+        else:
+            single_month_rate = plan.base_amount
+
+        rent_amount = single_month_rate * Decimal(months)
         deposit_amount = data.custom_deposit_amount if data.custom_deposit_amount is not None else plan.deposit_amount
-        frequency = plan.billing_frequency
-        item_desc = f"Study Room Desk {seat.seat_number} ({plan.name})"
+        frequency = "MONTHLY" if months != 12 else plan.billing_frequency
+        item_desc = f"Study Room Desk {seat.seat_number} ({months} Month{'s' if months > 1 else ''} @ ₹{single_month_rate:,.2f}/mo)"
     else:
         # Custom Pricing requires Super Admin or Admin authorization
         if current_user.user_type not in ["SUPER_ADMIN", "ADMIN"]:
             raise ForbiddenException("Custom pricing requires Super Admin or Admin authorization.")
         plan = await get_or_create_custom_plan(db, "STUDY_ROOM")
-        rent_amount = data.custom_rent_amount or Decimal("0.00")
+        single_month_rate = data.monthly_charge if data.monthly_charge is not None else (data.custom_rent_amount or Decimal("0.00"))
+        rent_amount = single_month_rate * Decimal(months)
         deposit_amount = data.custom_deposit_amount or Decimal("0.00")
-        frequency = "ONE_TIME"
-        item_desc = f"Study Room Desk {seat.seat_number} (Custom Agreement)"
+        frequency = "MONTHLY"
+        item_desc = f"Study Room Desk {seat.seat_number} ({months} Month{'s' if months > 1 else ''} Custom Agreement @ ₹{single_month_rate:,.2f}/mo)"
+
+    start_date = data.start_date or date.today()
+    if data.end_date:
+        end_date = data.end_date
+    else:
+        end_date = start_date + relativedelta(months=months) - timedelta(days=1)
 
     # 2. Create Active Student Service
     sr_sub = StudentService(
         student_id=student.id,
         service_plan_id=plan.id,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=start_date,
+        end_date=end_date,
         billing_frequency=frequency,
         unit_price=rent_amount,
         deposit_amount=deposit_amount,
@@ -179,8 +208,8 @@ async def allocate_seat(
         study_seat_id=seat.id,
         student_id=student.id,
         student_service_id=sr_sub.id,
-        start_date=data.start_date,
-        end_date=data.end_date,
+        start_date=start_date,
+        end_date=end_date,
         status="ACTIVE",
         allocated_by_user_id=current_user.id
     )
@@ -207,6 +236,26 @@ async def allocate_seat(
     await cache_service.delete(CacheKeys.dashboard_metrics())
     if alloc.student_id:
         await cache_service.delete(CacheKeys.student_profile(alloc.student_id))
+
+    # 5. Dispatch confirmation email asynchronously to Student & Parents
+    room_name = seat.study_room.name if seat.study_room else "Main Study Hall"
+    floor_num = seat.study_room.floor_number if seat.study_room else 1
+    asyncio.create_task(
+        notification_dispatcher.dispatch_facility_allocation_welcome(
+            student_id=student.id,
+            facility_type="STUDY_ROOM",
+            unit_label=f"Desk #{seat.seat_number}",
+            location_label=f"{room_name} (Floor {floor_num})",
+            duration_months=months,
+            start_date=start_date,
+            end_date=end_date,
+            monthly_charge=single_month_rate,
+            total_rent=rent_amount,
+            deposit_amount=deposit_amount,
+            invoice_number=invoice.invoice_number,
+            payment_status=invoice.status
+        )
+    )
     return {
         "message": f"Seat {seat.seat_number} allocated successfully to student {student.student_code}",
         "allocation_id": str(alloc.id),

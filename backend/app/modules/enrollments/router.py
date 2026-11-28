@@ -1,6 +1,7 @@
 import uuid
 from typing import List, Optional
 from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -319,18 +320,30 @@ async def process_full_admission(
 
     # 3. Facility Services: Hostel & Study Room
     seat_label = None
+    seat_obj = None
+    sr_months = max(1, data.study_room_months or 1)
+    sr_monthly_val = Decimal("0.00")
+    sr_total_rent_val = Decimal("0.00")
+    sr_dep_val = Decimal("0.00")
+    sr_start_dt = data.admission_date or date.today()
+    sr_end_dt = sr_start_dt + relativedelta(months=sr_months) - timedelta(days=1)
+
     if data.study_room_plan_id:
         srp = await db.get(ServicePlan, data.study_room_plan_id)
         if srp:
+            sr_monthly_val = data.study_room_monthly_charge if (data.study_room_monthly_charge is not None and data.study_room_monthly_charge >= Decimal("0.00")) else srp.base_amount
+            sr_total_rent_val = sr_monthly_val * Decimal(sr_months)
+            sr_dep_val = srp.deposit_amount
+
             sr_sub = StudentService(
                 student_id=student.id,
                 service_plan_id=srp.id,
                 academic_year_id=data.academic_year_id,
-                start_date=date.today(),
-                end_date=date.today() + timedelta(days=365),
-                billing_frequency=srp.billing_frequency,
-                unit_price=srp.base_amount,
-                deposit_amount=srp.deposit_amount,
+                start_date=sr_start_dt,
+                end_date=sr_end_dt,
+                billing_frequency="MONTHLY" if sr_months != 12 else srp.billing_frequency,
+                unit_price=sr_total_rent_val,
+                deposit_amount=sr_dep_val,
                 status="ACTIVE"
             )
             db.add(sr_sub)
@@ -339,7 +352,12 @@ async def process_full_admission(
             # Allocate Study Seat if provided
             if data.study_seat_id:
                 # Lock row with SELECT FOR UPDATE to prevent concurrency conflict
-                seat_stmt = select(StudySeat).where(StudySeat.id == data.study_seat_id).with_for_update()
+                seat_stmt = (
+                    select(StudySeat)
+                    .options(selectinload(StudySeat.study_room))
+                    .where(StudySeat.id == data.study_seat_id)
+                    .with_for_update()
+                )
                 seat = (await db.execute(seat_stmt)).scalar_one_or_none()
                 if not seat or seat.status != "AVAILABLE":
                     raise ConflictException("Selected study room seat is no longer available")
@@ -357,34 +375,54 @@ async def process_full_admission(
                     study_seat_id=seat.id,
                     student_id=student.id,
                     student_service_id=sr_sub.id,
-                    start_date=date.today(),
-                    end_date=date.today() + timedelta(days=365),
+                    start_date=sr_start_dt,
+                    end_date=sr_end_dt,
                     status="ACTIVE",
                     allocated_by_user_id=current_user.id
                 )
                 db.add(alloc)
                 seat_label = seat.seat_number
+                seat_obj = seat
 
     bed_label = None
+    bed_obj = None
+    h_months = max(1, data.hostel_months or 1)
+    h_monthly_val = Decimal("0.00")
+    h_total_rent_val = Decimal("0.00")
+    h_dep_val = Decimal("0.00")
+    h_start_dt = data.admission_date or date.today()
+    h_end_dt = h_start_dt + relativedelta(months=h_months) - timedelta(days=1)
+
     if data.hostel_plan_id:
         hp = await db.get(ServicePlan, data.hostel_plan_id)
         if hp:
+            h_monthly_val = data.hostel_monthly_charge if (data.hostel_monthly_charge is not None and data.hostel_monthly_charge >= Decimal("0.00")) else hp.base_amount
+            h_total_rent_val = h_monthly_val * Decimal(h_months)
+            h_dep_val = hp.deposit_amount
+
             h_sub = StudentService(
                 student_id=student.id,
                 service_plan_id=hp.id,
                 academic_year_id=data.academic_year_id,
-                start_date=date.today(),
-                end_date=date.today() + timedelta(days=365),
-                billing_frequency=hp.billing_frequency,
-                unit_price=hp.base_amount,
-                deposit_amount=hp.deposit_amount,
+                start_date=h_start_dt,
+                end_date=h_end_dt,
+                billing_frequency="MONTHLY" if h_months != 12 else hp.billing_frequency,
+                unit_price=h_total_rent_val,
+                deposit_amount=h_dep_val,
                 status="ACTIVE"
             )
             db.add(h_sub)
             await db.flush()
 
             if data.hostel_bed_id:
-                bed_stmt = select(HostelBed).where(HostelBed.id == data.hostel_bed_id).with_for_update()
+                bed_stmt = (
+                    select(HostelBed)
+                    .options(
+                        selectinload(HostelBed.room)
+                    )
+                    .where(HostelBed.id == data.hostel_bed_id)
+                    .with_for_update()
+                )
                 bed = (await db.execute(bed_stmt)).scalar_one_or_none()
                 if not bed or bed.status != "AVAILABLE":
                     raise ConflictException("Selected hostel bed is no longer available")
@@ -394,8 +432,8 @@ async def process_full_admission(
                     hostel_bed_id=bed.id,
                     student_id=student.id,
                     student_service_id=h_sub.id,
-                    start_date=date.today(),
-                    end_date=date.today() + timedelta(days=365),
+                    start_date=h_start_dt,
+                    end_date=h_end_dt,
                     check_in_date=date.today(),
                     status="ACTIVE",
                     allocated_by_user_id=current_user.id,
@@ -403,6 +441,7 @@ async def process_full_admission(
                 )
                 db.add(h_alloc)
                 bed_label = bed.bed_number
+                bed_obj = bed
 
     # 4. Pricing Calculation & Invoice Generation
     # Prepare inputs for PricingEngine
@@ -459,13 +498,25 @@ async def process_full_admission(
     if data.hostel_plan_id:
         hp = await db.get(ServicePlan, data.hostel_plan_id)
         if hp:
-            h_plan_dict = {"name": hp.name, "base_amount": hp.base_amount, "deposit_amount": hp.deposit_amount}
+            h_plan_dict = {
+                "name": hp.name,
+                "base_amount": h_total_rent_val,
+                "monthly_charge": h_monthly_val,
+                "months": h_months,
+                "deposit_amount": hp.deposit_amount
+            }
 
     sr_plan_dict = None
     if data.study_room_plan_id:
         srp = await db.get(ServicePlan, data.study_room_plan_id)
         if srp:
-            sr_plan_dict = {"name": srp.name, "base_amount": srp.base_amount, "deposit_amount": srp.deposit_amount}
+            sr_plan_dict = {
+                "name": srp.name,
+                "base_amount": sr_total_rent_val,
+                "monthly_charge": sr_monthly_val,
+                "months": sr_months,
+                "deposit_amount": srp.deposit_amount
+            }
 
     # If this is a Provisional Trial Admission, complete registration without tuition invoice
     if is_trial_admission:
@@ -676,6 +727,46 @@ async def process_full_admission(
         student_id=student.id,
         enrollment_id=enrollment.id if enrollment else None
     )
+
+    if seat_label:
+        background_tasks.add_task(
+            notification_dispatcher.dispatch_facility_allocation_welcome,
+            student_id=student.id,
+            facility_type="STUDY_ROOM",
+            unit_label=f"Desk #{seat_label}",
+            location_label=f"{seat_obj.study_room.name if (seat_obj and seat_obj.study_room) else 'Main Study Hall'} (Floor {seat_obj.study_room.floor_number if (seat_obj and seat_obj.study_room) else 1})",
+            duration_months=sr_months,
+            start_date=sr_start_dt,
+            end_date=sr_end_dt,
+            monthly_charge=sr_monthly_val,
+            total_rent=sr_total_rent_val,
+            deposit_amount=sr_dep_val,
+            invoice_number=invoice.invoice_number if invoice else "INV-FACILITY",
+            payment_status=invoice.status if invoice else "PAID"
+        )
+
+    if bed_label:
+        b_name = (
+            bed_obj.room.floor.building.name
+            if (bed_obj and bed_obj.room and bed_obj.room.floor and bed_obj.room.floor.building)
+            else "Main Hostel"
+        )
+        r_num = f"Room {bed_obj.room.room_number}" if (bed_obj and bed_obj.room) else ""
+        background_tasks.add_task(
+            notification_dispatcher.dispatch_facility_allocation_welcome,
+            student_id=student.id,
+            facility_type="HOSTEL",
+            unit_label=f"Bed #{bed_label} ({r_num})",
+            location_label=f"{b_name} ({r_num})",
+            duration_months=h_months,
+            start_date=h_start_dt,
+            end_date=h_end_dt,
+            monthly_charge=h_monthly_val,
+            total_rent=h_total_rent_val,
+            deposit_amount=h_dep_val,
+            invoice_number=invoice.invoice_number if invoice else "INV-FACILITY",
+            payment_status=invoice.status if invoice else "PAID"
+        )
 
     return AdmissionConfirmationResponse(
         student_id=student.id,
