@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useInstitute } from '../context/InstituteContext';
+import { useAuth } from '../context/AuthContext';
 
 interface InvoiceDetailModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
   onCollectFee
 }) => {
   const { institute } = useInstitute();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.user_type === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
   const [invoice, setInvoice] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -324,7 +327,7 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                 </button>
               </div>
 
-              {invoice && Number(invoice.balance_amount) > 0 && onCollectFee && (
+              {isSuperAdmin && invoice && Number(invoice.balance_amount) > 0 && onCollectFee && (
                 <button
                   onClick={() => {
                     onClose();

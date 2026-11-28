@@ -124,7 +124,8 @@ interface StudentOption {
 }
 
 export const FeesManagement: React.FC = () => {
-  const { hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = user?.user_type === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN') || hasRole(['SUPER_ADMIN']);
   const canReschedule = hasRole(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
   const canRestructure = hasRole(['SUPER_ADMIN', 'ADMIN']);
 
@@ -410,6 +411,7 @@ export const FeesManagement: React.FC = () => {
   }, [selectedAyId, selectedAcademicYear?.id, statusFilter, selectedClassId, selectedBatchId]);
 
   const openPaymentForInvoice = (inv: Invoice) => {
+    if (!isSuperAdmin) return;
     setSelectedInvoice(inv);
     // Sort installments ascending to guarantee sequential allocation from #1 upwards
     const sortedInsts = [...(inv.installments || [])].sort((a, b) => a.installment_number - b.installment_number);
@@ -1044,11 +1046,11 @@ export const FeesManagement: React.FC = () => {
                               <span>{remindingId === inv.id ? 'Sending...' : 'Remind'}</span>
                             </button>
                           )}
-                          {inv.balance_amount > 0 && (
+                          {isSuperAdmin && inv.balance_amount > 0 && (
                             <button
                               type="button"
                               onClick={() => openPaymentForInvoice(inv)}
-                              className="h-8 px-3 border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all inline-flex items-center justify-center"
+                              className="h-8 px-3 border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all inline-flex items-center justify-center cursor-pointer"
                             >
                               Collect Fee
                             </button>
@@ -1390,7 +1392,7 @@ export const FeesManagement: React.FC = () => {
                       )}
                     </div>
 
-                    {inv.balance_amount > 0 && (
+                    {isSuperAdmin && inv.balance_amount > 0 && (
                       <button
                         type="button"
                         onClick={() => openPaymentForInvoice(inv)}
@@ -1584,11 +1586,11 @@ export const FeesManagement: React.FC = () => {
                                           <Printer className="w-3 h-3 text-slate-500 shrink-0" />
                                           <span>Print</span>
                                         </button>
-                                        {inv.balance_amount > 0 && (
+                                        {isSuperAdmin && inv.balance_amount > 0 && (
                                           <button
                                             type="button"
                                             onClick={() => openPaymentForInvoice(inv)}
-                                            className="h-7 px-2.5 border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-2xs inline-flex items-center justify-center transition-all"
+                                            className="h-7 px-2.5 border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shadow-2xs inline-flex items-center justify-center transition-all cursor-pointer"
                                           >
                                             Collect Fee
                                           </button>
@@ -1716,7 +1718,7 @@ export const FeesManagement: React.FC = () => {
           isOpen={!!selectedInvoiceForDetail}
           invoiceId={selectedInvoiceForDetail}
           onClose={() => setSelectedInvoiceForDetail(null)}
-          onCollectFee={(inv) => openPaymentForInvoice(inv)}
+          onCollectFee={isSuperAdmin ? ((inv) => openPaymentForInvoice(inv)) : undefined}
         />
       )}
 

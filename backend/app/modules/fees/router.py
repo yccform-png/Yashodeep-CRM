@@ -157,7 +157,7 @@ async def list_invoices(
     status_filter: Optional[str] = None,
     class_id: Optional[uuid.UUID] = None,
     batch_id: Optional[uuid.UUID] = None,
-    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = (
@@ -306,8 +306,8 @@ async def get_detailed_invoice(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if current_user.user_type == "ADMIN":
-        raise ForbiddenException("Admins do not have access to financial invoices or ledgers")
+    if current_user.user_type not in ["SUPER_ADMIN", "ADMIN"]:
+        raise ForbiddenException("Access denied to financial invoice records")
     stmt = (
         select(Invoice)
         .options(
@@ -471,8 +471,8 @@ async def get_detailed_receipt(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if current_user.user_type == "ADMIN":
-        raise ForbiddenException("Admins do not have access to financial payment receipts")
+    if current_user.user_type not in ["SUPER_ADMIN", "ADMIN"]:
+        raise ForbiddenException("Access denied to financial payment receipts")
     stmt = (
         select(Payment)
         .options(
@@ -953,7 +953,7 @@ async def send_invoice_fee_reminder(
     invoice_id: uuid.UUID,
     installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID to remind for"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1000,7 +1000,7 @@ async def send_invoice_fee_reminder(
 async def send_installment_fee_reminder(
     installment_id: uuid.UUID,
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -1055,7 +1055,7 @@ async def send_installment_fee_reminder(
 async def get_invoice_whatsapp_url(
     invoice_id: uuid.UUID,
     installment_id: Optional[uuid.UUID] = Query(None, description="Optional specific installment ID"),
-    current_user: User = Depends(require_role(["SUPER_ADMIN"])),
+    current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """

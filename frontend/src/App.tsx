@@ -118,11 +118,11 @@ export const App: React.FC = () => {
             }
           />
 
-          {/* Strict Financial Lockdown: SUPER_ADMIN Only */}
+          {/* Financial Engine: SUPER_ADMIN & ADMIN (Fee collection strictly SUPER_ADMIN only) */}
           <Route
             path="fees"
             element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}>
                 <FeesManagement />
               </ProtectedRoute>
             }
