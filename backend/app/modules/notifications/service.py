@@ -19,7 +19,7 @@ from app.models.attendance import AttendanceSession, AttendanceRecord
 from app.models.fee import Payment, PaymentAllocation, Invoice, InstallmentPlan, Installment, Receipt
 from app.models.examination import Examination, ExamResult, ExamSubject
 from app.models.enrollment import Enrollment
-from app.models.hostel import BedAllocation, HostelBed, HostelRoom, HostelBuilding
+from app.models.hostel import BedAllocation, HostelBed, HostelRoom, HostelFloor, HostelBuilding
 from app.models.study_room import SeatAllocation, StudySeat, StudyRoom
 from app.models.service import StudentService, ServicePlan
 
@@ -1351,7 +1351,8 @@ class NotificationDispatcher:
                     .selectinload(StudentGuardian.guardian),
                     selectinload(BedAllocation.hostel_bed)
                     .selectinload(HostelBed.room)
-                    .selectinload(HostelRoom.building),
+                    .selectinload(HostelRoom.floor)
+                    .selectinload(HostelFloor.building),
                     selectinload(BedAllocation.student_service)
                     .selectinload(StudentService.service_plan)
                 )
@@ -1398,7 +1399,11 @@ class NotificationDispatcher:
                 # Prepare details
                 bed_num = b_alloc.hostel_bed.bed_number if b_alloc.hostel_bed else "Bed"
                 room_num = b_alloc.hostel_bed.room.room_number if b_alloc.hostel_bed and b_alloc.hostel_bed.room else "Room"
-                bld_name = b_alloc.hostel_bed.room.building.name if b_alloc.hostel_bed and b_alloc.hostel_bed.room and b_alloc.hostel_bed.room.building else "Hostel"
+                bld_name = (
+                    b_alloc.hostel_bed.room.floor.building.name
+                    if b_alloc.hostel_bed and b_alloc.hostel_bed.room and b_alloc.hostel_bed.room.floor and b_alloc.hostel_bed.room.floor.building
+                    else "Hostel Building"
+                )
 
                 unit_label = f"Bed {bed_num} (Room {room_num})"
                 location_label = f"{bld_name} - Room {room_num}"
