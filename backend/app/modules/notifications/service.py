@@ -7,6 +7,7 @@ import uuid
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, date, timedelta
+from decimal import Decimal
 from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
 

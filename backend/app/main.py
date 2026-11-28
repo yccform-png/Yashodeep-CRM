@@ -19,6 +19,7 @@ from app.modules.examinations.router import router as examinations_router
 from app.modules.reports.router import router as reports_router
 from app.modules.institutes.router import router as institutes_router
 from app.modules.notifications.router import router as notifications_router
+from app.modules.expenses.router import router as expenses_router
 from app.core.cache import cache_service
 
 
@@ -166,3 +167,4 @@ app.include_router(examinations_router, prefix=api_v1_prefix)
 app.include_router(reports_router, prefix=api_v1_prefix)
 app.include_router(institutes_router, prefix=api_v1_prefix)
 app.include_router(notifications_router, prefix=api_v1_prefix)
+app.include_router(expenses_router, prefix=api_v1_prefix)

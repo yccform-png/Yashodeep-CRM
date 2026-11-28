@@ -29,6 +29,7 @@ from app.models.examination import (
     ExamType, Examination, ExamSubject, ExamMarks, GradingScale, ExamResult
 )
 from app.models.notification import Notification, NotificationOutbox
+from app.models.expense import StaffMember, ExpenseTransaction
 
 __all__ = [
     "Base",
@@ -113,4 +114,6 @@ __all__ = [
     "ExamResult",
     "Notification",
     "NotificationOutbox",
+    "StaffMember",
+    "ExpenseTransaction",
 ]

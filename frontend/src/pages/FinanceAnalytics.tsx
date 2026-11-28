@@ -28,11 +28,13 @@ import {
   Download,
   CalendarDays,
   Percent,
-  CheckCheck
+  CheckCheck,
+  Wallet
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAcademicYear } from '../context/AcademicYearContext';
 import { useInstitute } from '../context/InstituteContext';
+import { ExpensesPayrollView } from '../components/finance/ExpensesPayrollView';
 
 interface FinanceOverview {
   selected_academic_year_id: string | null;
@@ -185,7 +187,7 @@ export const FinanceAnalytics: React.FC = () => {
   }, [selectedAcademicYear?.id]);
 
   // Active Main Tab
-  const [activeTab, setActiveTab] = useState<'BATCHES' | 'STREAMS' | 'DEFAULTERS' | 'MULTI_YEAR'>('BATCHES');
+  const [activeTab, setActiveTab] = useState<'BATCHES' | 'STREAMS' | 'DEFAULTERS' | 'EXPENSES' | 'MULTI_YEAR'>('BATCHES');
 
   // Data States
   const [loading, setLoading] = useState<boolean>(true);
@@ -524,6 +526,19 @@ export const FinanceAnalytics: React.FC = () => {
           >
             <ShieldAlert className="w-4 h-4" />
             <span>Defaulters &amp; Cashflow Pipeline ({defaulters?.summary.total_overdue_count || 0})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('EXPENSES')}
+            className={`flex items-center space-x-2 py-3.5 px-3 border-b-2 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'EXPENSES'
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>Expenses &amp; Staff Payroll</span>
           </button>
 
           <button
@@ -1063,7 +1078,16 @@ export const FinanceAnalytics: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 4: MULTI-YEAR COMPARISON & YOY GROWTH */}
+      {/* TAB 4: OPERATIONAL EXPENSES & STAFF PAYROLL */}
+      {activeTab === 'EXPENSES' && (
+        <ExpensesPayrollView
+          selectedAcademicYearId={selectedYearId}
+          institute={institute}
+          grossStudentCollections={overview?.total_collected || 0}
+        />
+      )}
+
+      {/* TAB 5: MULTI-YEAR COMPARISON & YOY GROWTH */}
       {activeTab === 'MULTI_YEAR' && (
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-5 w-full">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">

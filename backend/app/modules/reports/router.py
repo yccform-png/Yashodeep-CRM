@@ -18,6 +18,7 @@ from app.models.hostel import HostelBed
 from app.models.attendance import AttendanceRecord
 from app.models.academic import Course, Class, Batch, BatchStudent, AcademicYear
 from app.models.enrollment import Enrollment
+from app.models.expense import ExpenseTransaction
 
 router = APIRouter(prefix="/reports", tags=["Reports & Analytics"])
 
@@ -339,6 +340,36 @@ async def get_finance_overview(
             "yoy_growth": yoy_growth
         })
 
+    # 5. Institute Expenditures & Operating Margin
+    exp_cond = ExpenseTransaction.institute_id == current_user.institute_id
+    if target_ay:
+        exp_cond = and_(
+            exp_cond,
+            or_(
+                ExpenseTransaction.academic_year_id == target_ay.id,
+                and_(
+                    ExpenseTransaction.academic_year_id.is_(None),
+                    ExpenseTransaction.payment_date >= target_ay.start_date,
+                    ExpenseTransaction.payment_date <= target_ay.end_date
+                )
+            )
+        )
+
+    total_sal_exp = float((await db.execute(
+        select(func.coalesce(func.sum(ExpenseTransaction.amount), 0.0)).where(
+            exp_cond, ExpenseTransaction.expense_category == "SALARY"
+        )
+    )).scalar() or 0.0)
+
+    total_other_exp = float((await db.execute(
+        select(func.coalesce(func.sum(ExpenseTransaction.amount), 0.0)).where(
+            exp_cond, ExpenseTransaction.expense_category != "SALARY"
+        )
+    )).scalar() or 0.0)
+
+    total_expenses = total_sal_exp + total_other_exp
+    net_operating_balance = total_collected - total_expenses
+
     return {
         "selected_academic_year_id": str(target_ay.id) if target_ay else None,
         "selected_academic_year_name": target_ay.name if target_ay else "All Academic Years (Cumulative)",
@@ -346,6 +377,10 @@ async def get_finance_overview(
         "total_collected": total_collected,
         "total_outstanding": total_outstanding,
         "recovery_rate": recovery_rate,
+        "total_salaries_expense": total_sal_exp,
+        "total_operational_expense": total_other_exp,
+        "total_expenses": total_expenses,
+        "net_operating_balance": net_operating_balance,
         "invoices_count": {
             "total": total_invoices_count,
             "paid": paid_count,

@@ -23,6 +23,7 @@ from app.models.attendance import AttendanceSession, AttendanceRecord, Attendanc
 from app.models.examination import Examination, ExamSubject, ExamMarks, ExamResult
 from app.models.academic import AcademicYear, Batch, BatchSubject, BatchStudent
 from app.models.notification import Notification, NotificationOutbox
+from app.models.expense import ExpenseTransaction
 from app.modules.institutes.schemas import (
     InstituteResponse, InstituteUpdate,
     DangerZonePreviewResponse, DangerZonePurgeRequest
@@ -174,7 +175,8 @@ async def purge_test_data_for_production(
     await db.execute(delete(ExamSubject))
     await db.execute(delete(Examination))
 
-    # Step C: Fees, Invoices & Payments
+    # Step C: Fees, Invoices & Payments & Test Expenses
+    await db.execute(delete(ExpenseTransaction))
     await db.execute(delete(Refund))
     await db.execute(delete(Receipt))
     await db.execute(delete(PaymentAllocation))
