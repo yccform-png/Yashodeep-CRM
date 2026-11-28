@@ -147,6 +147,8 @@ export const Admissions: React.FC = () => {
   const [admissionTrack, setAdmissionTrack] = useState<'REGULAR' | 'SKILL_ONLY' | 'FACILITY_ONLY'>('REGULAR');
   const [availableBatches, setAvailableBatches] = useState<any[]>([]);
 
+  const isFacilityOnlyTrack = !formData.is_academic_enrolled || admissionTrack === 'FACILITY_ONLY';
+
   // Fee Preview Result
   const [feePreview, setFeePreview] = useState<any>(null);
   const [calculatingFee, setCalculatingFee] = useState(false);
@@ -472,19 +474,33 @@ export const Admissions: React.FC = () => {
       } else if (formData.mobile.replace(/\D/g, '').length < 10) {
         errors.mobile = 'Mobile number must be at least 10 digits.';
       }
-      if (!formData.guardian_name?.trim()) {
-        errors.guardian_name = 'Guardian full name is mandatory.';
-      }
-      if (!formData.guardian_relation?.trim()) {
-        errors.guardian_relation = 'Relationship to student is mandatory.';
-      }
-      if (!formData.guardian_mobile?.trim()) {
-        errors.guardian_mobile = 'Guardian mobile phone is mandatory.';
-      } else if (formData.guardian_mobile.replace(/\D/g, '').length < 10) {
-        errors.guardian_mobile = 'Guardian mobile must be at least 10 digits.';
-      }
-      if (!formData.guardian_occupation?.trim()) {
-        errors.guardian_occupation = 'Guardian occupation / profession is mandatory.';
+      if (!isFacilityOnlyTrack) {
+        if (!formData.guardian_name?.trim()) {
+          errors.guardian_name = 'Guardian full name is mandatory.';
+        }
+        if (!formData.guardian_relation?.trim()) {
+          errors.guardian_relation = 'Relationship to student is mandatory.';
+        }
+        if (!formData.guardian_mobile?.trim()) {
+          errors.guardian_mobile = 'Guardian mobile phone is mandatory.';
+        } else if (formData.guardian_mobile.replace(/\D/g, '').length < 10) {
+          errors.guardian_mobile = 'Guardian mobile must be at least 10 digits.';
+        }
+        if (!formData.guardian_occupation?.trim()) {
+          errors.guardian_occupation = 'Guardian occupation / profession is mandatory.';
+        }
+      } else {
+        // Optional for facility-only track: if entered, ensure valid format and reciprocal presence
+        if (formData.guardian_name?.trim() && !formData.guardian_mobile?.trim()) {
+          errors.guardian_mobile = 'Guardian mobile phone is required when guardian name is provided.';
+        } else if (formData.guardian_mobile?.trim()) {
+          if (formData.guardian_mobile.replace(/\D/g, '').length < 10) {
+            errors.guardian_mobile = 'Guardian mobile must be at least 10 digits.';
+          }
+          if (!formData.guardian_name?.trim()) {
+            errors.guardian_name = 'Guardian full name is required when guardian mobile is provided.';
+          }
+        }
       }
       if (!formData.village?.trim()) {
         errors.village = 'Village / Town (गाव) is mandatory.';
@@ -717,7 +733,7 @@ export const Admissions: React.FC = () => {
         emergency_contact_name: formData.emergency_contact_name?.trim() || undefined,
         emergency_contact_phone: formData.emergency_contact_phone?.trim() || undefined,
         emergency_contact_relation: formData.emergency_contact_relation?.trim() || undefined,
-        guardians: formData.guardian_name?.trim() ? [
+        guardians: (formData.guardian_name?.trim() && formData.guardian_mobile?.trim()) ? [
           {
             first_name: formData.guardian_name.trim().split(/\s+/)[0],
             last_name: formData.guardian_name.trim().split(/\s+/).slice(1).join(' ') || formData.last_name.trim(),
@@ -2078,12 +2094,21 @@ export const Admissions: React.FC = () => {
                     <span>Parent / Guardian &amp; Emergency Contact</span>
                   </h3>
                   {activeCard === 4 ? (
-                    <p className="text-[11px] text-slate-500">Primary fee billing sponsor and emergency contact for attendance &amp; medical alerts</p>
+                    <p className="text-[11px] text-slate-500">
+                      {isFacilityOnlyTrack
+                        ? 'Optional for Facility-Only admission • Primary fee billing sponsor and emergency contact'
+                        : 'Primary fee billing sponsor and emergency contact for attendance & medical alerts'}
+                    </p>
                   ) : (
                     <p className="text-[11px] font-semibold text-slate-700 truncate max-w-md sm:max-w-xl">
-                      {formData.guardian_name && formData.guardian_mobile && formData.guardian_occupation ? (
+                      {formData.guardian_name && formData.guardian_mobile ? (
                         <span>
-                          {formData.guardian_name} ({formData.guardian_relation}) • {formData.guardian_mobile} • {formData.guardian_occupation}
+                          {formData.guardian_name} ({formData.guardian_relation || 'Guardian'}) • {formData.guardian_mobile}
+                          {formData.guardian_occupation ? ` • ${formData.guardian_occupation}` : ''}
+                        </span>
+                      ) : isFacilityOnlyTrack ? (
+                        <span className="text-slate-500 font-medium italic">
+                          Optional (Guardian details can be provided or left blank)
                         </span>
                       ) : (
                         <span className="text-rose-500 font-semibold italic">
@@ -2095,10 +2120,14 @@ export const Admissions: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
-                {formData.guardian_name?.trim() && formData.guardian_mobile?.trim() && formData.guardian_occupation?.trim() ? (
+                {formData.guardian_name?.trim() && formData.guardian_mobile?.trim() ? (
                   <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                     <span>Recorded</span>
+                  </span>
+                ) : isFacilityOnlyTrack ? (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wider">
+                    Optional
                   </span>
                 ) : (
                   <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 uppercase tracking-wider">
@@ -2116,13 +2145,19 @@ export const Admissions: React.FC = () => {
                 {/* Subsection A: Primary Parent/Guardian */}
                 <div>
                   <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">
-                    4.1 Primary Parent / Guardian Details (Fee &amp; Academic Updates)
+                    {isFacilityOnlyTrack
+                      ? '4.1 Parent / Guardian Details (Optional for Facility-Only Admission)'
+                      : '4.1 Primary Parent / Guardian Details (Fee & Academic Updates)'}
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
                         <span>Guardian Full Name</span>
-                        <span className="text-rose-500 font-bold">*</span>
+                        {isFacilityOnlyTrack ? (
+                          <span className="text-slate-400 font-normal">(Optional)</span>
+                        ) : (
+                          <span className="text-rose-500 font-bold">*</span>
+                        )}
                       </label>
                       <div className="relative">
                         <User className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -2147,7 +2182,11 @@ export const Admissions: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
                         <span>Relationship to Student</span>
-                        <span className="text-rose-500 font-bold">*</span>
+                        {isFacilityOnlyTrack ? (
+                          <span className="text-slate-400 font-normal">(Optional)</span>
+                        ) : (
+                          <span className="text-rose-500 font-bold">*</span>
+                        )}
                       </label>
                       <select
                         value={formData.guardian_relation}
@@ -2172,7 +2211,11 @@ export const Admissions: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
                         <span>Guardian Mobile Phone</span>
-                        <span className="text-rose-500 font-bold">*</span>
+                        {isFacilityOnlyTrack ? (
+                          <span className="text-slate-400 font-normal">(Optional)</span>
+                        ) : (
+                          <span className="text-rose-500 font-bold">*</span>
+                        )}
                       </label>
                       <div className="relative">
                         <Phone className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -2216,7 +2259,11 @@ export const Admissions: React.FC = () => {
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1">
                         <span>Guardian Occupation / Profession</span>
-                        <span className="text-rose-500 font-bold">*</span>
+                        {isFacilityOnlyTrack ? (
+                          <span className="text-slate-400 font-normal">(Optional)</span>
+                        ) : (
+                          <span className="text-rose-500 font-bold">*</span>
+                        )}
                       </label>
                       <div className="relative">
                         <Building2 className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
