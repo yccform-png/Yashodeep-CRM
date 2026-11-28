@@ -17,7 +17,9 @@ export const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isSessionExpired = new URLSearchParams(location.search).get('reason') === 'inactivity';
+  const isSessionExpired =
+    new URLSearchParams(location.search).get('reason') === 'inactivity' ||
+    new URLSearchParams(location.search).get('session_expired') === 'true';
 
   const handleTabChange = (tab: 'STAFF' | 'STUDENT_PARENT') => {
     setActiveTab(tab);
@@ -40,8 +42,8 @@ export const Login: React.FC = () => {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
 
-      const { access_token, ...userData } = res.data;
-      login(access_token, userData);
+      const { access_token, refresh_token, ...userData } = res.data;
+      login(access_token, userData, refresh_token);
 
       // Role-specific landing redirect
       if (userData.user_type === 'STUDENT' || userData.user_type === 'PARENT') {
@@ -110,7 +112,7 @@ export const Login: React.FC = () => {
         {isSessionExpired && (
           <div className="mb-5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center space-x-2.5">
             <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Your session expired due to 15 minutes of inactivity. Please sign in again.</span>
+            <span>Your session has expired due to long inactivity. Please sign in again.</span>
           </div>
         )}
 

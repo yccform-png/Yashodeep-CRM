@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     CRON_SECRET: str = "ycc-crm-cron-secret-2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 90
 
     # Database
     POSTGRES_SERVER: str = "localhost"

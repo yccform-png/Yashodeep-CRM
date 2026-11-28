@@ -20,8 +20,18 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
   idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
   warningTimeoutMs = DEFAULT_WARNING_TIMEOUT_MS,
 }) => {
-  const { isAuthenticated, logout, refreshToken } = useAuth();
+  const { user, isAuthenticated, logout, refreshToken } = useAuth();
   const navigate = useNavigate();
+
+  // If accessing via PWA standalone mode, on mobile, or as a Student / Parent,
+  // do NOT aggressively log out after 15 minutes of idle screen.
+  // Their session is persisted via the 90-day sliding refresh token.
+  const isPWAOrMobile =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true ||
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    user?.user_type === 'STUDENT' ||
+    user?.user_type === 'PARENT';
 
   const [showWarning, setShowWarning] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(120);
@@ -55,7 +65,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
 
   // Activity listener (tracks user movement / interaction)
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || isPWAOrMobile) return;
 
     // Reset baseline timers on mount or auth state change
     lastActivityRef.current = Date.now();
@@ -108,7 +118,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
 
   // Interval timer checking for idle timeout and driving the countdown
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || isPWAOrMobile) {
       setShowWarning(false);
       return;
     }
@@ -143,7 +153,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
     return () => clearInterval(interval);
   }, [isAuthenticated, idleTimeoutMs, warningTimeoutMs, logout, navigate]);
 
-  if (!isAuthenticated || !showWarning) {
+  if (!isAuthenticated || !showWarning || isPWAOrMobile) {
     return null;
   }
 

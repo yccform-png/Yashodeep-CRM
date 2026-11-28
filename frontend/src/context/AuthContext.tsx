@@ -15,7 +15,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (token: string, userData: User) => void;
+  login: (token: string, userData: User, refreshToken?: string) => void;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   isAuthenticated: boolean;
@@ -46,10 +46,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token, user]);
 
-  const login = (newToken: string, userData: User) => {
+  const login = (newToken: string, userData: User, newRefreshToken?: string) => {
     setToken(newToken);
     setUser(userData);
     localStorage.setItem('token', newToken);
+    if (newRefreshToken) {
+      localStorage.setItem('refresh_token', newRefreshToken);
+    }
     localStorage.setItem('user', JSON.stringify(userData));
   };
 
@@ -57,17 +60,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
   };
 
   const refreshToken = async (): Promise<boolean> => {
+    const rf = localStorage.getItem('refresh_token');
     try {
-      const res = await api.post('/auth/refresh');
-      const { access_token, ...userData } = res.data;
+      const res = await api.post('/auth/refresh', rf ? { refresh_token: rf } : {});
+      const { access_token, refresh_token: newRf, ...userData } = res.data;
       setToken(access_token);
-      setUser(userData);
       localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(userData));
+      if (newRf) {
+        localStorage.setItem('refresh_token', newRf);
+      }
+      if (userData && Object.keys(userData).length > 0) {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
       return true;
     } catch (err) {
       console.warn('Silent token refresh failed:', err);

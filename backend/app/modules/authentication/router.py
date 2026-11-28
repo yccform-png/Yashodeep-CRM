@@ -3,14 +3,14 @@ import secrets
 import re
 from typing import Optional, Tuple, Dict, Any
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Header
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.security import verify_password, create_access_token, get_password_hash
+from app.core.security import verify_password, create_access_token, create_refresh_token, decode_token, get_password_hash
 from app.core.exceptions import UnauthorizedException, BadRequestException, NotFoundException, ForbiddenException
 from app.core.deps import get_current_user
 from app.core.cache import cache_service
@@ -20,7 +20,7 @@ from app.models.academic import BatchStudent
 from app.modules.notifications.providers.meta_whatsapp import meta_whatsapp_client
 from app.modules.notifications.providers.brevo_email import brevo_email_client
 from app.modules.authentication.schemas import (
-    LoginRequest, TokenResponse, UserResponse, PasswordChangeRequest,
+    LoginRequest, RefreshTokenRequest, TokenResponse, UserResponse, PasswordChangeRequest,
     ForgotPasswordChannel, ForgotPasswordRequestOtp, ForgotPasswordVerifyAndReset
 )
 
@@ -191,9 +191,11 @@ async def login(
             "student_id": str(student_id) if student_id else None
         }
     )
+    refresh_token = create_refresh_token(subject=user.id)
 
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh_token,
         token_type="bearer",
         user_id=user.id,
         email=user.email,
@@ -238,42 +240,81 @@ async def get_me(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    current_user: User = Depends(get_current_user),
+    payload: Optional[RefreshTokenRequest] = None,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Sliding session refresh endpoint.
-    Issues a fresh access token for an actively working user to keep their session alive.
+    Persistent session refresh endpoint.
+    Accepts a long-lived refresh token (valid for 90 days) in JSON body or Authorization header.
+    Validates user is active, issues a new access token, and issues a rotated refresh token
+    (sliding expiration) so active mobile PWA users stay logged in indefinitely.
     """
-    roles_list = [r.code for r in current_user.roles]
-    if current_user.user_type not in roles_list:
-        roles_list.append(current_user.user_type)
+    token_str = None
+    if payload and payload.refresh_token:
+        token_str = payload.refresh_token.strip()
+    elif authorization and authorization.startswith("Bearer "):
+        token_str = authorization.split(" ")[1].strip()
+
+    if not token_str:
+        raise UnauthorizedException("Refresh token is required to renew session.")
+
+    decoded = decode_token(token_str)
+    if not decoded or not decoded.get("sub"):
+        raise UnauthorizedException("Invalid or expired session. Please sign in again.")
+
+    user_id_str = decoded.get("sub")
+    try:
+        user_uuid = uuid.UUID(user_id_str)
+    except ValueError:
+        raise UnauthorizedException("Invalid session payload. Please sign in again.")
+
+    stmt = (
+        select(User)
+        .options(selectinload(User.roles).selectinload(Role.permissions))
+        .where(User.id == user_uuid)
+    )
+    user = (await db.execute(stmt)).scalars().first()
+
+    if not user or not user.is_active:
+        raise UnauthorizedException("User account is inactive or not found. Please contact administration.")
+
+    # Update last login timestamp as sign of active sliding session
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    roles_list = [r.code for r in user.roles]
+    if user.user_type not in roles_list:
+        roles_list.append(user.user_type)
 
     perms_set = set()
-    for r in current_user.roles:
+    for r in user.roles:
         for p in r.permissions:
             perms_set.add(p.code)
 
-    student_id = await _get_student_id_for_user(db, current_user)
+    student_id = await _get_student_id_for_user(db, user)
 
-    token = create_access_token(
-        subject=current_user.id,
+    new_access_token = create_access_token(
+        subject=user.id,
         extra_claims={
-            "email": current_user.email,
-            "user_type": current_user.user_type,
+            "email": user.email,
+            "user_type": user.user_type,
             "roles": roles_list,
             "student_id": str(student_id) if student_id else None
         }
     )
+    # Rotate refresh token to grant another full 90-day window from today (sliding expiration)
+    new_refresh_token = create_refresh_token(subject=user.id)
 
     return TokenResponse(
-        access_token=token,
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
         token_type="bearer",
-        user_id=current_user.id,
-        email=current_user.email,
-        first_name=current_user.first_name,
-        last_name=current_user.last_name,
-        user_type=current_user.user_type,
+        user_id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        user_type=user.user_type,
         roles=roles_list,
         permissions=sorted(list(perms_set)),
         student_id=student_id
