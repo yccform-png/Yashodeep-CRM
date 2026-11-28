@@ -62,7 +62,7 @@ export const InstituteSettings: React.FC = () => {
   const isSuperAdmin = user?.user_type === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
 
   // Active top tab
-  const [activeTab, setActiveTab] = useState<'INSTITUTE' | 'ADMINS'>('INSTITUTE');
+  const [activeTab, setActiveTab] = useState<'INSTITUTE' | 'ADMINS' | 'DANGER_ZONE'>('INSTITUTE');
 
   // Institute profile state
   const [savingInst, setSavingInst] = useState(false);
@@ -122,6 +122,93 @@ export const InstituteSettings: React.FC = () => {
   const [isEditStaffOpen, setIsEditStaffOpen] = useState(false);
   const [selectedStaffForReset, setSelectedStaffForReset] = useState<AdminUser | null>(null);
   const [isResetStaffPasswordOpen, setIsResetStaffPasswordOpen] = useState(false);
+
+  // Danger Zone / Go-Live Reset state
+  interface DangerZonePreview {
+    students_count: number;
+    guardians_count: number;
+    portal_users_count: number;
+    invoices_count: number;
+    total_gross_invoiced: number;
+    payments_count: number;
+    examinations_count: number;
+    exam_marks_count: number;
+    attendance_records_count: number;
+    seat_allocations_count: number;
+    bed_allocations_count: number;
+  }
+  const [dangerPreview, setDangerPreview] = useState<DangerZonePreview | null>(null);
+  const [loadingDangerPreview, setLoadingDangerPreview] = useState(false);
+  const [isPurgeModalOpen, setIsPurgeModalOpen] = useState(false);
+  const [purgePassword, setPurgePassword] = useState('');
+  const [showPurgePassword, setShowPurgePassword] = useState(false);
+  const [purgeConfirmationPhrase, setPurgeConfirmationPhrase] = useState('');
+  const [confirmCheck1, setConfirmCheck1] = useState(false);
+  const [confirmCheck2, setConfirmCheck2] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeSuccess, setPurgeSuccess] = useState<string | null>(null);
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+
+  const fetchDangerPreview = async () => {
+    try {
+      setLoadingDangerPreview(true);
+      const res = await api.get<DangerZonePreview>('/institutes/danger-zone/preview');
+      setDangerPreview(res.data);
+    } catch (err: any) {
+      console.error('Failed to load danger zone preview', err);
+    } finally {
+      setLoadingDangerPreview(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'DANGER_ZONE' && isSuperAdmin) {
+      fetchDangerPreview();
+      setPurgeSuccess(null);
+      setPurgeError(null);
+    }
+  }, [activeTab, isSuperAdmin]);
+
+  const handleOpenPurgeModal = () => {
+    setPurgePassword('');
+    setPurgeConfirmationPhrase('');
+    setConfirmCheck1(false);
+    setConfirmCheck2(false);
+    setPurgeError(null);
+    setIsPurgeModalOpen(true);
+  };
+
+  const handleExecutePurge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmCheck1 || !confirmCheck2) {
+      setPurgeError('Please acknowledge both safety checkboxes to proceed.');
+      return;
+    }
+    if (purgeConfirmationPhrase.trim() !== 'CONFIRM-PURGE-TEST-DATA') {
+      setPurgeError('Confirmation phrase does not match. Please type CONFIRM-PURGE-TEST-DATA exactly.');
+      return;
+    }
+    if (!purgePassword) {
+      setPurgeError('Please enter your Super Admin password to authorize the purge.');
+      return;
+    }
+
+    try {
+      setPurging(true);
+      setPurgeError(null);
+      const res = await api.post('/institutes/danger-zone/purge-test-data', {
+        password: purgePassword,
+        confirmation_phrase: purgeConfirmationPhrase.trim()
+      });
+      setIsPurgeModalOpen(false);
+      setPurgeSuccess(res.data?.message || 'Test data successfully purged for production launch.');
+      await fetchDangerPreview();
+    } catch (err: any) {
+      setPurgeError(err.response?.data?.detail || 'Failed to purge test data. Please verify your password.');
+    } finally {
+      setPurging(false);
+    }
+  };
 
   // Keep form updated when institute data loads
   useEffect(() => {
@@ -372,6 +459,24 @@ export const InstituteSettings: React.FC = () => {
               activeTab === 'ADMINS' ? 'bg-indigo-400/30 text-white' : 'bg-indigo-100 text-indigo-700'
             }`}>
               Super Admin
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('DANGER_ZONE')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'DANGER_ZONE'
+                ? 'bg-rose-600 text-white shadow-sm shadow-rose-500/20'
+                : 'bg-white text-slate-600 hover:text-rose-700 border border-slate-200 hover:bg-rose-50/50'
+            }`}
+          >
+            <AlertTriangle className={`w-4 h-4 ${activeTab === 'DANGER_ZONE' ? 'text-white' : 'text-rose-500'}`} />
+            <span>Danger Zone / Go-Live Reset</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+              activeTab === 'DANGER_ZONE' ? 'bg-rose-400/30 text-white' : 'bg-rose-100 text-rose-700'
+            }`}>
+              Reset
             </span>
           </button>
         </div>
@@ -1554,6 +1659,359 @@ export const InstituteSettings: React.FC = () => {
                 });
               }}
             />
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: DANGER ZONE & PRODUCTION GO-LIVE RESET (SUPER ADMIN ONLY) */}
+      {/* ========================================================================= */}
+      {activeTab === 'DANGER_ZONE' && isSuperAdmin && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Purge Success Banner */}
+          {purgeSuccess && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 font-semibold shadow-xs">
+              <div className="flex items-center space-x-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>{purgeSuccess}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPurgeSuccess(null)}
+                className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Purge Error Banner */}
+          {purgeError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 font-semibold shadow-xs">
+              <div className="flex items-center space-x-2.5">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>{purgeError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPurgeError(null)}
+                className="text-rose-700 hover:text-rose-900 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Warning Top Card */}
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-rose-950 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div className="flex items-start space-x-3.5">
+                <div className="p-2.5 bg-rose-600 text-white rounded-xl shrink-0 mt-0.5 shadow-sm shadow-rose-600/30">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-rose-950">
+                    Production Go-Live Data Purge &amp; Reset
+                  </h3>
+                  <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                    This utility is built for the Super Administrator to clear all testing data (test students, mock invoices, payment receipts, test examination papers, and attendance logs) created during testing before admitting real students in production.
+                  </p>
+                  <div className="mt-3 flex items-center space-x-2 text-xs font-semibold text-rose-900 bg-rose-100/70 py-1.5 px-3 rounded-lg border border-rose-200 inline-flex">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>All master configurations (Branding, Academic Years, Classes, Courses, Batches, Study Room Desks, Hostel Rooms, and Staff Logins) remain 100% intact.</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={fetchDangerPreview}
+                disabled={loadingDangerPreview}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-semibold transition shrink-0 self-start cursor-pointer"
+                title="Reload live record counts"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingDangerPreview ? 'animate-spin' : ''}`} />
+                <span>Refresh Counts</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Live Inventory Footprint Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">Test Students</span>
+                <Users className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">
+                {loadingDangerPreview ? '...' : (dangerPreview?.students_count || 0)}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                + {dangerPreview?.portal_users_count || 0} student/parent portal logins
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">Gross Invoiced</span>
+                <Receipt className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">
+                {loadingDangerPreview ? '...' : `₹${Number(dangerPreview?.total_gross_invoiced || 0).toLocaleString('en-IN')}`}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Across {dangerPreview?.invoices_count || 0} invoices &amp; {dangerPreview?.payments_count || 0} payments
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">Exams &amp; Results</span>
+                <FileText className="w-4 h-4 text-purple-600" />
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">
+                {loadingDangerPreview ? '...' : (dangerPreview?.examinations_count || 0)}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                With {dangerPreview?.exam_marks_count || 0} marks entered
+              </p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">Facility Tenancies</span>
+                <Building className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="mt-2 text-2xl font-black text-slate-900">
+                {loadingDangerPreview ? '...' : ((dangerPreview?.seat_allocations_count || 0) + (dangerPreview?.bed_allocations_count || 0))}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {dangerPreview?.seat_allocations_count || 0} desks, {dangerPreview?.bed_allocations_count || 0} beds booked
+              </p>
+            </div>
+          </div>
+
+          {/* Side-by-Side Scope Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Will Be Deleted */}
+            <div className="bg-white rounded-2xl border border-rose-200 p-5 shadow-xs">
+              <div className="flex items-center space-x-2 text-rose-700 font-bold text-sm pb-3 border-b border-rose-100">
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>Records That Will Be Permanently Purged</span>
+              </div>
+              <ul className="mt-3.5 space-y-2 text-xs text-slate-700">
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Student Registry:</strong> All student profiles, admission numbers, uploaded documents, and emergency contacts.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Portal Credentials:</strong> Student and Parent portal accounts (removes unauthorized logins).</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Finance &amp; Invoices:</strong> All invoices, payment receipts, installment schedules, and fee discounts.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Tests &amp; Marks:</strong> Created test papers, paper subjects, student marks, and report cards.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Attendance:</strong> Daily attendance rosters and batch session records.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-rose-500 font-bold shrink-0 mt-0.5">✕</span>
+                  <span><strong>Facility Occupancies:</strong> Study room seat allocations and hostel bed bookings (resets statuses to Available).</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Will Remain Intact */}
+            <div className="bg-white rounded-2xl border border-emerald-200 p-5 shadow-xs">
+              <div className="flex items-center space-x-2 text-emerald-800 font-bold text-sm pb-3 border-b border-emerald-100">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Master Infrastructure Kept 100% Intact</span>
+              </div>
+              <ul className="mt-3.5 space-y-2 text-xs text-slate-700">
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Institute Profile:</strong> Institute branding, logo, GSTIN, campus address, and bank/UPI coordinates.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Staff Accounts:</strong> SuperAdmin, Admin, Teacher, and Accountant user logins and permissions.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Academic Structure:</strong> Academic Sessions (2026-2027, 2027-2028), Classes (5th to 12th), Streams, and Subjects.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Batches &amp; Divisions:</strong> Configured division classrooms (e.g. 10th - Div A) stay ready for real admissions.</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Facility Layout:</strong> All 150 Study Room desks and Hostel rooms/beds (ready for clean occupancy).</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-emerald-600 font-bold shrink-0 mt-0.5">✓</span>
+                  <span><strong>Auto-Sequence Reset:</strong> Invoice numbers (<code>INV-YYYY-00001</code>) and student PRNs start fresh at <code>0001</code>.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Trigger Action Box */}
+          <div className="bg-white rounded-2xl border border-rose-200 p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold text-slate-900">
+                Ready to prepare Yashodeep ERP for real admissions?
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                Once confirmed, all test transactional data is deleted immediately in a single atomic transaction.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenPurgeModal}
+              className="inline-flex items-center space-x-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/25 transition cursor-pointer shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Purge Test Data &amp; Reset for Production</span>
+            </button>
+          </div>
+
+          {/* Triple-Lock Confirmation Modal */}
+          {isPurgeModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+              <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 max-w-lg w-full p-6 animate-in zoom-in-95 overflow-hidden">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center space-x-2 text-rose-600">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <h3 className="text-base font-bold text-slate-900">
+                      Permanently Purge Test Data
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPurgeModalOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleExecutePurge} className="mt-4 space-y-4">
+                  {purgeError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 font-semibold flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>{purgeError}</span>
+                    </div>
+                  )}
+
+                  <div className="p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl text-xs text-rose-900 leading-relaxed">
+                    <strong>Warning:</strong> This operation is <strong>irreversible</strong>. All test student records, invoices, receipts, and exam marks will be permanently removed.
+                  </div>
+
+                  {/* Lock 1: Mandatory Checkboxes */}
+                  <div className="space-y-2.5 pt-1">
+                    <label className="flex items-start space-x-2.5 cursor-pointer text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={confirmCheck1}
+                        onChange={(e) => setConfirmCheck1(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <span>I confirm that I want to wipe all student profiles, invoices, installments, receipts, and exam papers.</span>
+                    </label>
+
+                    <label className="flex items-start space-x-2.5 cursor-pointer text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={confirmCheck2}
+                        onChange={(e) => setConfirmCheck2(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <span>I understand that batch divisions, courses, classes, study room desks, and staff accounts will remain intact.</span>
+                    </label>
+                  </div>
+
+                  {/* Lock 2: Confirmation Phrase */}
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Type <span className="font-mono text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">CONFIRM-PURGE-TEST-DATA</span> to proceed:
+                    </label>
+                    <input
+                      type="text"
+                      value={purgeConfirmationPhrase}
+                      onChange={(e) => setPurgeConfirmationPhrase(e.target.value)}
+                      placeholder="CONFIRM-PURGE-TEST-DATA"
+                      className="w-full text-xs font-mono px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  {/* Lock 3: Super Admin Password */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Enter Super Admin Password:
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPurgePassword ? 'text' : 'password'}
+                        value={purgePassword}
+                        onChange={(e) => setPurgePassword(e.target.value)}
+                        placeholder="Your Super Admin password"
+                        className="w-full text-xs px-3 py-2 pr-9 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPurgePassword(!showPurgePassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                      >
+                        {showPurgePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-end space-x-2.5 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsPurgeModalOpen(false)}
+                      disabled={purging}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        purging ||
+                        !confirmCheck1 ||
+                        !confirmCheck2 ||
+                        purgeConfirmationPhrase.trim() !== 'CONFIRM-PURGE-TEST-DATA' ||
+                        !purgePassword
+                      }
+                      className="inline-flex items-center space-x-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {purging ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Purging Test Data...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          <span>Permanently Purge Data</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           )}
         </div>
       )}

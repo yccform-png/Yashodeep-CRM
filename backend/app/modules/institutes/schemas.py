@@ -73,3 +73,22 @@ class InstituteUpdate(BaseModel):
         if isinstance(v, str) and not v.strip():
             return None
         return v
+
+
+class DangerZonePreviewResponse(BaseModel):
+    students_count: int
+    guardians_count: int
+    portal_users_count: int
+    invoices_count: int
+    total_gross_invoiced: float
+    payments_count: int
+    examinations_count: int
+    exam_marks_count: int
+    attendance_records_count: int
+    seat_allocations_count: int
+    bed_allocations_count: int
+
+
+class DangerZonePurgeRequest(BaseModel):
+    password: str
+    confirmation_phrase: str
