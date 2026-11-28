@@ -128,7 +128,7 @@ export const FeesManagement: React.FC = () => {
   const canReschedule = hasRole(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTANT']);
   const canRestructure = hasRole(['SUPER_ADMIN', 'ADMIN']);
 
-  const { selectedAcademicYear, academicYears } = useAcademicYear();
+  const { selectedAcademicYear, academicYears, setSelectedAcademicYearById } = useAcademicYear();
   const [selectedAyId, setSelectedAyId] = useState<string>('');
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -819,6 +819,9 @@ export const FeesManagement: React.FC = () => {
                     const newAy = e.target.value;
                     setSelectedAyId(newAy);
                     fetchInvoices(newAy);
+                    if (newAy !== 'ALL') {
+                      setSelectedAcademicYearById(newAy);
+                    }
                   }}
                   className="w-full sm:w-auto sm:max-w-[190px] text-xs font-semibold py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 truncate min-w-0 cursor-pointer"
                   title="Filter invoices by Academic Session"

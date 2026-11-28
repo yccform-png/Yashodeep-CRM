@@ -8,8 +8,8 @@ import { DeleteStudentModal } from '../components/DeleteStudentModal';
 import { StudentAdmissionFormModal } from '../components/StudentAdmissionFormModal';
 
 export const StudentsList: React.FC = () => {
-  const { academicYears, selectedAcademicYear } = useAcademicYear();
-  const [selectedAyFilter, setSelectedAyFilter] = useState<string>('');
+  const { academicYears, selectedAcademicYear, setSelectedAcademicYearById } = useAcademicYear();
+  const [selectedAyFilter, setSelectedAyFilter] = useState<string>(selectedAcademicYear?.id || '');
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -18,12 +18,13 @@ export const StudentsList: React.FC = () => {
   const [pageSize, setPageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Sync with global academic year
+  // Sync with global academic year immediately upon switching
   useEffect(() => {
-    if (selectedAcademicYear && !selectedAyFilter) {
+    if (selectedAcademicYear?.id) {
       setSelectedAyFilter(selectedAcademicYear.id);
+      setPage(1);
     }
-  }, [selectedAcademicYear]);
+  }, [selectedAcademicYear?.id]);
 
   // Edit & Delete modal states
   const [studentToEdit, setStudentToEdit] = useState<any | null>(null);
@@ -239,8 +240,12 @@ export const StudentsList: React.FC = () => {
             <select
               value={selectedAyFilter}
               onChange={(e) => {
-                setSelectedAyFilter(e.target.value);
+                const newAy = e.target.value;
+                setSelectedAyFilter(newAy);
                 setPage(1);
+                if (newAy) {
+                  setSelectedAcademicYearById(newAy);
+                }
               }}
               className="bg-transparent text-xs text-slate-800 font-semibold focus:outline-none cursor-pointer py-1.5"
             >

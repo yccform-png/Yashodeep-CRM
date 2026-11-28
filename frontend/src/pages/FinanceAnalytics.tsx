@@ -171,11 +171,18 @@ interface DefaultersData {
 }
 
 export const FinanceAnalytics: React.FC = () => {
-  const { academicYears, selectedAcademicYear } = useAcademicYear();
+  const { academicYears, selectedAcademicYear, setSelectedAcademicYearById } = useAcademicYear();
   const { institute } = useInstitute();
 
   // Active Year Selection: 'ALL' or specific academic_year_id
   const [selectedYearId, setSelectedYearId] = useState<string>(selectedAcademicYear?.id || 'ALL');
+
+  // Reactively sync with global academic year changes from Topbar
+  useEffect(() => {
+    if (selectedAcademicYear?.id) {
+      setSelectedYearId(selectedAcademicYear.id);
+    }
+  }, [selectedAcademicYear?.id]);
 
   // Active Main Tab
   const [activeTab, setActiveTab] = useState<'BATCHES' | 'STREAMS' | 'DEFAULTERS' | 'MULTI_YEAR'>('BATCHES');
@@ -357,7 +364,13 @@ export const FinanceAnalytics: React.FC = () => {
             <Calendar className="w-4 h-4 text-slate-500 ml-1.5" />
             <select
               value={selectedYearId}
-              onChange={(e) => setSelectedYearId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedYearId(val);
+                if (val !== 'ALL') {
+                  setSelectedAcademicYearById(val);
+                }
+              }}
               className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer pr-2"
             >
               <option value="ALL">All Academic Years (Multi-Year Trajectory)</option>

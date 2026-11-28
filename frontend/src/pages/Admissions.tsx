@@ -108,7 +108,7 @@ export const Admissions: React.FC = () => {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
   const { institute } = useInstitute();
-  const { selectedAcademicYear } = useAcademicYear();
+  const { selectedAcademicYear, setSelectedAcademicYearById } = useAcademicYear();
   const isAdmin = hasRole(['SUPER_ADMIN', 'ADMIN']);
 
   const [step, setStep] = useState(1);
@@ -179,6 +179,13 @@ export const Admissions: React.FC = () => {
       console.error('Failed to load master metadata', err);
     }
   };
+
+  // Reactively sync academic year when switched from Topbar
+  useEffect(() => {
+    if (selectedAcademicYear?.id) {
+      setFormData((prev) => ({ ...prev, academic_year_id: selectedAcademicYear.id, batch_id: '' }));
+    }
+  }, [selectedAcademicYear?.id]);
 
   // Re-fetch courses when class or stream changes
   useEffect(() => {
@@ -2499,7 +2506,11 @@ export const Admissions: React.FC = () => {
                   <select
                     value={formData.academic_year_id}
                     onChange={(e) => {
-                      setFormData((prev) => ({ ...prev, academic_year_id: e.target.value, batch_id: '' }));
+                      const val = e.target.value;
+                      setFormData((prev) => ({ ...prev, academic_year_id: val, batch_id: '' }));
+                      if (val) {
+                        setSelectedAcademicYearById(val);
+                      }
                     }}
                     className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   >
