@@ -50,16 +50,30 @@ async def list_students(
 ):
     stmt = select(Student)
     if academic_year_id:
+        # Include students who have academic course enrollment in this AY
+        # OR who have facility service subscriptions (Hostel/Study Room) in this AY
         stmt = (
             stmt
-            .join(Enrollment, Enrollment.student_id == Student.id)
-            .where(Enrollment.academic_year_id == academic_year_id)
+            .outerjoin(Enrollment, Enrollment.student_id == Student.id)
+            .outerjoin(StudentService, StudentService.student_id == Student.id)
+            .where(
+                or_(
+                    Enrollment.academic_year_id == academic_year_id,
+                    StudentService.academic_year_id == academic_year_id
+                )
+            )
             .distinct()
         )
         count_stmt = (
             select(func.count(func.distinct(Student.id)))
-            .join(Enrollment, Enrollment.student_id == Student.id)
-            .where(Enrollment.academic_year_id == academic_year_id)
+            .outerjoin(Enrollment, Enrollment.student_id == Student.id)
+            .outerjoin(StudentService, StudentService.student_id == Student.id)
+            .where(
+                or_(
+                    Enrollment.academic_year_id == academic_year_id,
+                    StudentService.academic_year_id == academic_year_id
+                )
+            )
         )
     else:
         count_stmt = select(func.count(Student.id))
@@ -94,6 +108,7 @@ async def list_students(
             selectinload(Student.enrollments).selectinload(Enrollment.academic_class),
             selectinload(Student.enrollments).selectinload(Enrollment.course),
             selectinload(Student.enrollments).selectinload(Enrollment.batch),
+            selectinload(Student.services).selectinload(StudentService.service_plan).selectinload(ServicePlan.service_type),
             selectinload(Student.guardians).selectinload(StudentGuardian.guardian),
         )
         .offset(skip)
@@ -112,6 +127,37 @@ def _build_student_list_response(s: Student, academic_year_id: Optional[uuid.UUI
         target_enr = next((e for e in (s.enrollments or []) if e.academic_year_id == academic_year_id), None)
     if not target_enr and s.enrollments:
         target_enr = next((e for e in s.enrollments if e.status == "ACTIVE"), s.enrollments[0])
+
+    class_name = None
+    course_name = None
+    batch_name = None
+    enrollment_status = target_enr.status if target_enr else s.status
+
+    if target_enr:
+        class_name = target_enr.academic_class.name if target_enr.academic_class else None
+        course_name = target_enr.course.name if target_enr.course else None
+        batch_name = target_enr.batch.name if target_enr.batch else None
+    else:
+        # Check facility-only services (Study Room / Hostel)
+        active_services = [
+            srv for srv in (s.services or [])
+            if srv.status == "ACTIVE" and (not academic_year_id or srv.academic_year_id == academic_year_id)
+        ]
+        if active_services:
+            fac_types = []
+            for srv in active_services:
+                plan_name = srv.service_plan.name if srv.service_plan else ""
+                st_code = srv.service_plan.service_type.code if (srv.service_plan and srv.service_plan.service_type) else ""
+                if "HOSTEL" in st_code or "Hostel" in plan_name:
+                    fac_types.append("Hostel")
+                elif "STUDY" in st_code or "Study" in plan_name:
+                    fac_types.append("Study Room")
+                else:
+                    fac_types.append(plan_name or "Facility")
+            dedup = list(dict.fromkeys(fac_types))
+            class_name = f"Facility Only ({' & '.join(dedup)})"
+            course_name = "Study Hall & Boarding Facility"
+            enrollment_status = "ACTIVE"
 
     primary_sg = next((sg for sg in (s.guardians or []) if sg.is_primary), (s.guardians[0] if s.guardians else None))
     g_obj = primary_sg.guardian if (primary_sg and primary_sg.guardian) else None
@@ -169,11 +215,11 @@ def _build_student_list_response(s: Student, academic_year_id: Optional[uuid.UUI
         guardian_email=g_obj.email if g_obj else None,
         guardian_occupation=g_obj.occupation if g_obj else None,
         guardians=g_list,
-        enrollment_status=target_enr.status if target_enr else s.status,
+        enrollment_status=enrollment_status,
         promotion_status=target_enr.promotion_status if target_enr else None,
-        class_name=target_enr.academic_class.name if target_enr and target_enr.academic_class else None,
-        course_name=target_enr.course.name if target_enr and target_enr.course else None,
-        batch_name=target_enr.batch.name if target_enr and target_enr.batch else None,
+        class_name=class_name,
+        course_name=course_name,
+        batch_name=batch_name,
     )
 
 

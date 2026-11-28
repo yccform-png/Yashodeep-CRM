@@ -319,7 +319,13 @@ export const StudentsList: React.FC = () => {
                       <td className="p-3.5">
                         {s.class_name ? (
                           <div>
-                            <span className="font-bold text-slate-900">{s.class_name}</span>
+                            {s.class_name.startsWith('Facility Only') ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                🏛️ {s.class_name}
+                              </span>
+                            ) : (
+                              <span className="font-bold text-slate-900">{s.class_name}</span>
+                            )}
                             {s.course_name && (
                               <p className="text-[10px] text-slate-400 truncate max-w-[170px]" title={s.course_name}>
                                 {s.course_name}
@@ -392,8 +398,8 @@ export const StudentsList: React.FC = () => {
                         {s.first_name} {s.last_name}
                       </h4>
                       {s.class_name && (
-                        <p className="text-xs text-blue-700 font-semibold mt-0.5">
-                          {s.class_name} {s.course_name ? `• ${s.course_name}` : ''}
+                        <p className={`text-xs font-semibold mt-0.5 ${s.class_name.startsWith('Facility Only') ? 'text-purple-700' : 'text-blue-700'}`}>
+                          {s.class_name.startsWith('Facility Only') ? `🏛️ ${s.class_name}` : s.class_name} {s.course_name ? `• ${s.course_name}` : ''}
                         </p>
                       )}
                     </div>

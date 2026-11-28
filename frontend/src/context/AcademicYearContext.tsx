@@ -26,7 +26,23 @@ const AcademicYearContext = createContext<AcademicYearContextType | undefined>(u
 
 export const AcademicYearProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [selectedAcademicYear, setSelectedAcademicYearState] = useState<AcademicYear | null>(null);
+  const [selectedAcademicYear, setSelectedAcademicYearState] = useState<AcademicYear | null>(() => {
+    try {
+      const storedId = localStorage.getItem('ycc_selected_ay_id');
+      const storedName = localStorage.getItem('ycc_selected_ay_name');
+      if (storedId) {
+        return {
+          id: storedId,
+          name: storedName || 'Academic Session',
+          code: '',
+          is_current: false,
+          start_date: '',
+          end_date: ''
+        };
+      }
+    } catch (e) {}
+    return null;
+  });
   const [loadingYears, setLoadingYears] = useState<boolean>(true);
 
   const fetchYears = async () => {
@@ -47,7 +63,10 @@ export const AcademicYearProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       if (matchedYear) {
         setSelectedAcademicYearState(matchedYear);
-        localStorage.setItem('ycc_selected_ay_id', matchedYear.id);
+        try {
+          localStorage.setItem('ycc_selected_ay_id', matchedYear.id);
+          localStorage.setItem('ycc_selected_ay_name', matchedYear.name);
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to load academic years', err);
@@ -62,7 +81,10 @@ export const AcademicYearProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const setSelectedAcademicYear = (year: AcademicYear) => {
     setSelectedAcademicYearState(year);
-    localStorage.setItem('ycc_selected_ay_id', year.id);
+    try {
+      localStorage.setItem('ycc_selected_ay_id', year.id);
+      localStorage.setItem('ycc_selected_ay_name', year.name);
+    } catch (e) {}
   };
 
   const setSelectedAcademicYearById = (yearId: string) => {
